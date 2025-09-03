@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -10,34 +9,26 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
+import { useAuth } from "./auth-provider"
 
 export function LoginForm() {
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState("")
   const router = useRouter()
+
+  const { login, error } = useAuth()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
-    setError("")
 
-    // Simulate authentication
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      // For demo purposes, accept any email/password
-      if (email && password) {
-        localStorage.setItem("isAuthenticated", "true")
-        localStorage.setItem("userEmail", email)
+      const success = await login(email, password)
+      if (success) {
         router.push("/dashboard")
-      } else {
-        setError("Please enter both email and password")
       }
-    } catch (err) {
-      setError("Login failed. Please try again.")
     } finally {
       setIsLoading(false)
     }

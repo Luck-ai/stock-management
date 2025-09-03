@@ -12,16 +12,23 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Bell, Settings, LogOut, Search } from "lucide-react"
-import { useRouter } from "next/navigation"
 import { Input } from "@/components/ui/input"
+import { useAuth } from "@/components/auth/auth-provider"
 
 export function DashboardHeader() {
-  const router = useRouter()
+  const { user, logout } = useAuth()
 
   const handleLogout = () => {
-    localStorage.removeItem("isAuthenticated")
-    localStorage.removeItem("userEmail")
-    router.push("/login")
+    logout()
+  }
+
+  const getUserInitials = () => {
+    if (!user) return "U"
+    const names = user.full_name.split(" ")
+    if (names.length >= 2) {
+      return `${names[0][0]}${names[1][0]}`.toUpperCase()
+    }
+    return user.full_name[0].toUpperCase()
   }
 
   return (
@@ -60,21 +67,15 @@ export function DashboardHeader() {
             <DropdownMenuTrigger asChild>
               <Button variant="ghost" className="relative h-9 w-9 rounded-full">
                 <Avatar className="h-9 w-9">
-                  <AvatarFallback className="bg-primary text-primary-foreground">
-                    {typeof window !== "undefined"
-                      ? (localStorage.getItem("userEmail") || "U").charAt(0).toUpperCase()
-                      : "U"}
-                  </AvatarFallback>
+                  <AvatarFallback className="bg-primary text-primary-foreground">{getUserInitials()}</AvatarFallback>
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-56" align="end" forceMount>
               <DropdownMenuLabel className="font-normal">
                 <div className="flex flex-col space-y-1">
-                  <p className="text-sm font-medium leading-none">Stock Manager</p>
-                  <p className="text-xs leading-none text-muted-foreground">
-                    {typeof window !== "undefined" ? localStorage.getItem("userEmail") : "user@example.com"}
-                  </p>
+                  <p className="text-sm font-medium leading-none">{user?.full_name || "User"}</p>
+                  <p className="text-xs leading-none text-muted-foreground">{user?.email || "user@example.com"}</p>
                 </div>
               </DropdownMenuLabel>
               <DropdownMenuSeparator />

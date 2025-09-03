@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -10,6 +9,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
+import { useAuth } from "./auth-provider"
 
 export function SignupForm() {
   const [formData, setFormData] = useState({
@@ -21,8 +21,10 @@ export function SignupForm() {
   const [showPassword, setShowPassword] = useState(false)
   const [showConfirmPassword, setShowConfirmPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
-  const [error, setError] = useState("")
+  const [localError, setLocalError] = useState("")
   const router = useRouter()
+
+  const { register, error: authError } = useAuth()
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setFormData((prev) => ({
@@ -34,40 +36,38 @@ export function SignupForm() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
-    setError("")
+    setLocalError("")
 
     // Basic validation
     if (formData.password !== formData.confirmPassword) {
-      setError("Passwords do not match")
+      setLocalError("Passwords do not match")
       setIsLoading(false)
       return
     }
 
     if (formData.password.length < 6) {
-      setError("Password must be at least 6 characters")
+      setLocalError("Password must be at least 6 characters")
       setIsLoading(false)
       return
     }
 
-    // Simulate account creation
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000))
-
-      localStorage.setItem("isAuthenticated", "true")
-      localStorage.setItem("userEmail", formData.email)
-      router.push("/dashboard")
-    } catch (err) {
-      setError("Account creation failed. Please try again.")
+      const success = await register(formData.email, formData.password, formData.name)
+      if (success) {
+        router.push("/dashboard")
+      }
     } finally {
       setIsLoading(false)
     }
   }
 
+  const displayError = localError || authError
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
-      {error && (
+      {displayError && (
         <Alert variant="destructive">
-          <AlertDescription>{error}</AlertDescription>
+          <AlertDescription>{displayError}</AlertDescription>
         </Alert>
       )}
 

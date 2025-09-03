@@ -4,120 +4,94 @@ import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 import { StockTable } from "./stock-table"
 import { AddProductDialog } from "./add-product-dialog"
 import { EditProductDialog } from "./edit-product-dialog"
-import { Plus, Search } from "lucide-react"
-
-export interface Product {
-  id: string
-  name: string
-  sku: string
-  category: string
-  quantity: number
-  price: number
-  lowStockThreshold: number
-  supplier: string
-  lastUpdated: string
-}
-
-// Mock data for demonstration
-const initialProducts: Product[] = [
-  {
-    id: "1",
-    name: "Wireless Headphones",
-    sku: "WH-001",
-    category: "Electronics",
-    quantity: 45,
-    price: 99.99,
-    lowStockThreshold: 10,
-    supplier: "TechCorp",
-    lastUpdated: "2024-01-15",
-  },
-  {
-    id: "2",
-    name: "Bluetooth Speaker",
-    sku: "BS-002",
-    category: "Electronics",
-    quantity: 8,
-    price: 79.99,
-    lowStockThreshold: 15,
-    supplier: "AudioMax",
-    lastUpdated: "2024-01-14",
-  },
-  {
-    id: "3",
-    name: "USB-C Cable",
-    sku: "UC-003",
-    category: "Accessories",
-    quantity: 120,
-    price: 19.99,
-    lowStockThreshold: 25,
-    supplier: "CableCo",
-    lastUpdated: "2024-01-13",
-  },
-  {
-    id: "4",
-    name: "Laptop Stand",
-    sku: "LS-004",
-    category: "Accessories",
-    quantity: 3,
-    price: 49.99,
-    lowStockThreshold: 5,
-    supplier: "DeskPro",
-    lastUpdated: "2024-01-12",
-  },
-  {
-    id: "5",
-    name: "Wireless Mouse",
-    sku: "WM-005",
-    category: "Electronics",
-    quantity: 67,
-    price: 29.99,
-    lowStockThreshold: 20,
-    supplier: "TechCorp",
-    lastUpdated: "2024-01-11",
-  },
-]
+import { Plus, Search, Loader2 } from "lucide-react"
+import { useProducts } from "@/lib/hooks/use-api"
+import { useApiMutation } from "@/lib/hooks/use-api"
+import { apiClient, handleApiError } from "@/lib/api"
+import type { Product, CreateProductRequest } from "@/lib/api"
 
 export function StockManagement() {
-  const [products, setProducts] = useState<Product[]>(initialProducts)
   const [searchTerm, setSearchTerm] = useState("")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
 
-  const filteredProducts = products.filter(
-    (product) =>
-      product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      product.category.toLowerCase().includes(searchTerm.toLowerCase()),
-  )
+  const {
+    data: productsData,
+    loading,
+    error,
+    refetch,
+  } = useProducts({
+    search: searchTerm || undefined,
+    limit: 100,
+  })
 
-  const lowStockCount = products.filter((product) => product.quantity <= product.lowStockThreshold).length
+  const {
+    mutate: createProduct,
+    loading: creating,
+    error: createError,
+  } = useApiMutation<Product, CreateProductRequest>()
+  const {
+    mutate: updateProduct,
+    loading: updating,
+    error: updateError,
+  } = useApiMutation<Product, { id: number; data: Partial<CreateProductRequest> }>()
+  const { mutate: deleteProduct, loading: deleting, error: deleteError } = useApiMutation<void, number>()
 
-  const totalProducts = products.length
-  const totalValue = products.reduce((sum, product) => sum + product.quantity * product.price, 0)
+  const products = productsData?.items || []
+  const lowStockCount = products.filter((product) => product.stock_quantity <= product.min_stock_level).length
+  const totalProducts = productsData?.total || 0
+  const totalValue = products.reduce((sum, product) => sum + product.stock_quantity * product.price, 0)
 
-  const handleAddProduct = (newProduct: Omit<Product, "id" | "lastUpdated">) => {
-    const product: Product = {
-      ...newProduct,
-      id: Date.now().toString(),
-      lastUpdated: new Date().toISOString().split("T")[0],
+  const handleAddProduct = async (newProductData: CreateProductRequest) => {
+    const result = await createProduct((data) => apiClient.createProduct(data), newProductData)
+
+    if (result) {
+      await refetch()
+      setIsAddDialogOpen(false)
     }
-    setProducts([...products, product])
   }
 
-  const handleEditProduct = (updatedProduct: Product) => {
-    setProducts(
-      products.map((p) =>
-        p.id === updatedProduct.id ? { ...updatedProduct, lastUpdated: new Date().toISOString().split("T")[0] } : p,
-      ),
+  const handleEditProduct = async (updatedProduct: Product) => {
+    const result = await updateProduct(({ id, data }) => apiClient.updateProduct(id, data), {
+      id: updatedProduct.id,
+      data: {
+        name: updatedProduct.name,
+        sku: updatedProduct.sku,
+        description: updatedProduct.description,
+        category: updatedProduct.category,
+        price: updatedProduct.price,
+        cost: updatedProduct.cost,
+        stock_quantity: updatedProduct.stock_quantity,
+        min_stock_level: updatedProduct.min_stock_level,
+        max_stock_level: updatedProduct.max_stock_level,
+        supplier_id: updatedProduct.supplier_id,
+      },
+    })
+
+    if (result) {
+      await refetch()
+      setEditingProduct(null)
+    }
+  }
+
+  const handleDeleteProduct = async (id: number) => {
+    const result = await deleteProduct((productId) => apiClient.deleteProduct(productId), id)
+
+    if (result !== null) {
+      await refetch()
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[400px]">
+        <Loader2 className="h-8 w-8 animate-spin" />
+      </div>
     )
-    setEditingProduct(null)
-  }
-
-  const handleDeleteProduct = (id: string) => {
-    setProducts(products.filter((p) => p.id !== id))
   }
 
   return (
@@ -127,11 +101,17 @@ export function StockManagement() {
           <h1 className="text-3xl font-bold">Stock Management</h1>
           <p className="text-muted-foreground">Manage your inventory and track stock levels</p>
         </div>
-        <Button onClick={() => setIsAddDialogOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
+        <Button onClick={() => setIsAddDialogOpen(true)} disabled={creating}>
+          {creating ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Plus className="mr-2 h-4 w-4" />}
           Add Product
         </Button>
       </div>
+
+      {(error || createError || updateError || deleteError) && (
+        <Alert variant="destructive">
+          <AlertDescription>{handleApiError(error || createError || updateError || deleteError)}</AlertDescription>
+        </Alert>
+      )}
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-3">
@@ -183,12 +163,22 @@ export function StockManagement() {
             </div>
           </div>
 
-          <StockTable products={filteredProducts} onEdit={setEditingProduct} onDelete={handleDeleteProduct} />
+          <StockTable
+            products={products}
+            onEdit={setEditingProduct}
+            onDelete={handleDeleteProduct}
+            loading={deleting}
+          />
         </CardContent>
       </Card>
 
       {/* Dialogs */}
-      <AddProductDialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen} onAdd={handleAddProduct} />
+      <AddProductDialog
+        open={isAddDialogOpen}
+        onOpenChange={setIsAddDialogOpen}
+        onAdd={handleAddProduct}
+        loading={creating}
+      />
 
       {editingProduct && (
         <EditProductDialog
@@ -196,6 +186,7 @@ export function StockManagement() {
           onOpenChange={() => setEditingProduct(null)}
           product={editingProduct}
           onEdit={handleEditProduct}
+          loading={updating}
         />
       )}
     </div>

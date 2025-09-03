@@ -4,23 +4,35 @@ import { useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
-import { Settings, RefreshCw, Plus, Download } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { Settings, RefreshCw, Plus, Download, Loader2 } from "lucide-react"
 import { AutoReorderSuggestions } from "./auto-reorder-suggestions"
 import { ManualReorder } from "./manual-reorder"
 import { PurchaseOrders } from "./purchase-orders"
 import { RestockHistory } from "./restock-history"
 import { ReorderSettings } from "./reorder-settings"
+import { usePurchaseOrders, useRestockSuggestions, useInventoryStats } from "@/lib/hooks/use-api"
+import { handleApiError } from "@/lib/api"
 
 export function RestockManagement() {
   const [activeTab, setActiveTab] = useState("suggestions")
 
-  // Mock summary data
-  const summary = {
-    pendingOrders: 8,
-    autoSuggestions: 12,
-    totalValue: 45680,
-    criticalItems: 5,
-  }
+  const { data: purchaseOrders, loading: ordersLoading, error: ordersError } = usePurchaseOrders()
+  const { data: suggestions, loading: suggestionsLoading, error: suggestionsError } = useRestockSuggestions()
+  const { data: inventoryStats, loading: inventoryLoading, error: inventoryError } = useInventoryStats()
+
+  const loading = ordersLoading || suggestionsLoading || inventoryLoading
+  const error = ordersError || suggestionsError || inventoryError
+
+  // Calculate summary data from API responses
+  const pendingOrders =
+    purchaseOrders?.filter((order) => order.status === "PENDING" || order.status === "APPROVED").length || 0
+  const autoSuggestions = suggestions?.length || 0
+  const totalValue =
+    purchaseOrders
+      ?.filter((order) => order.status === "PENDING" || order.status === "APPROVED")
+      .reduce((sum, order) => sum + order.total_amount, 0) || 0
+  const criticalItems = suggestions?.filter((suggestion) => suggestion.urgency === "high").length || 0
 
   return (
     <div className="space-y-6">
@@ -31,20 +43,27 @@ export function RestockManagement() {
           <p className="text-muted-foreground">Manage inventory replenishment and purchase orders</p>
         </div>
         <div className="flex items-center space-x-2">
-          <Button variant="outline">
+          <Button variant="outline" disabled={loading}>
             <Download className="h-4 w-4 mr-2" />
             Export Orders
           </Button>
-          <Button variant="outline">
+          <Button variant="outline" onClick={() => setActiveTab("settings")}>
             <Settings className="h-4 w-4 mr-2" />
             Settings
           </Button>
-          <Button>
+          <Button onClick={() => setActiveTab("manual")}>
             <Plus className="h-4 w-4 mr-2" />
             New Order
           </Button>
         </div>
       </div>
+
+      {/* Error Alert */}
+      {error && (
+        <Alert variant="destructive">
+          <AlertDescription>{handleApiError(error)}</AlertDescription>
+        </Alert>
+      )}
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-4">
@@ -54,7 +73,9 @@ export function RestockManagement() {
             <RefreshCw className="h-4 w-4 text-muted-foreground" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">{summary.pendingOrders}</div>
+            <div className="text-2xl font-bold">
+              {loading ? <Loader2 className="h-6 w-6 animate-spin" /> : pendingOrders}
+            </div>
             <p className="text-xs text-muted-foreground">Active purchase orders</p>
           </CardContent>
         </Card>
@@ -65,7 +86,9 @@ export function RestockManagement() {
             <RefreshCw className="h-4 w-4 text-blue-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-blue-600">{summary.autoSuggestions}</div>
+            <div className="text-2xl font-bold text-blue-600">
+              {loading ? <Loader2 className="h-6 w-6 animate-spin" /> : autoSuggestions}
+            </div>
             <p className="text-xs text-muted-foreground">Items to reorder</p>
           </CardContent>
         </Card>
@@ -76,7 +99,9 @@ export function RestockManagement() {
             <RefreshCw className="h-4 w-4 text-green-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold">${summary.totalValue.toLocaleString()}</div>
+            <div className="text-2xl font-bold">
+              {loading ? <Loader2 className="h-6 w-6 animate-spin" /> : `$${totalValue.toLocaleString()}`}
+            </div>
             <p className="text-xs text-muted-foreground">Pending order value</p>
           </CardContent>
         </Card>
@@ -87,8 +112,10 @@ export function RestockManagement() {
             <RefreshCw className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{summary.criticalItems}</div>
-            <p className="text-xs text-muted-foreground">Out of stock items</p>
+            <div className="text-2xl font-bold text-red-600">
+              {loading ? <Loader2 className="h-6 w-6 animate-spin" /> : criticalItems}
+            </div>
+            <p className="text-xs text-muted-foreground">High priority items</p>
           </CardContent>
         </Card>
       </div>
