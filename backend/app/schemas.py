@@ -56,6 +56,59 @@ class ProductOut(ProductBase):
         orm_mode = True
 
 
+class ProductCategoryBase(BaseModel):
+    name: str
+    description: Optional[str] = None
+
+
+class ProductCategoryCreate(ProductCategoryBase):
+    pass
+
+
+class ProductCategoryOut(ProductCategoryBase):
+    id: int
+
+    class Config:
+        orm_mode = True
+
+
+class ProductSaleBase(BaseModel):
+    product_id: int
+    user_id: Optional[int] = None
+    quantity: int
+    sale_price: float
+
+
+class ProductSaleCreate(ProductSaleBase):
+    pass
+
+
+class ProductSaleOut(ProductSaleBase):
+    id: int
+    sale_date: Optional[str] = None
+
+    class Config:
+        orm_mode = True
+
+
+class UserBase(BaseModel):
+    full_name: str
+    email: str
+
+
+class UserCreate(UserBase):
+    password: str
+
+
+class UserOut(UserBase):
+    id: int
+    role: Optional[str] = None
+    is_active: bool = True
+
+    class Config:
+        orm_mode = True
+
+
  
  
  

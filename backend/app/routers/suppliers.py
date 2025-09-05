@@ -9,7 +9,7 @@ from .. import crud
 router = APIRouter(prefix="/suppliers", tags=["suppliers"])
 
 
-@router.post("/", response_model=schemas.SupplierOut)
+@router.post("/supply", response_model=schemas.SupplierOut)
 async def create_supplier(supplier: schemas.SupplierCreate, db: AsyncSession = Depends(get_db)):
     db_supplier = models.Supplier(**supplier.dict())
     db.add(db_supplier)
@@ -18,13 +18,13 @@ async def create_supplier(supplier: schemas.SupplierCreate, db: AsyncSession = D
     return db_supplier
 
 
-@router.get("/", response_model=List[schemas.SupplierOut])
+@router.get("/supply", response_model=List[schemas.SupplierOut])
 async def list_suppliers(db: AsyncSession = Depends(get_db)):
     result = await db.execute(models.Supplier.__table__.select())
     return result.scalars().all()
 
 
-@router.get("/{supplier_id}", response_model=schemas.SupplierOut)
+@router.get("/supply/{supplier_id}", response_model=schemas.SupplierOut)
 async def get_supplier(supplier_id: int, db: AsyncSession = Depends(get_db)):
     s = await db.get(models.Supplier, supplier_id)
     if not s:

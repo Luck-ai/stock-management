@@ -9,7 +9,6 @@ class Supplier(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(255), nullable=False, unique=True, index=True)
-    contact_name = Column(String(255), nullable=True)
     email = Column(String(255), nullable=True)
     phone = Column(String(64), nullable=True)
     address = Column(Text, nullable=True)
@@ -30,5 +29,35 @@ class Product(Base):
     last_updated = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     supplier = relationship('Supplier', backref='products')
+
+
+class ProductCategory(Base):
+    __tablename__ = 'product_categories'
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(128), nullable=False, unique=True, index=True)
+    description = Column(Text, nullable=True)
+
+
+class ProductSale(Base):
+    __tablename__ = 'product_sales'
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey('products.id'), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True, index=True)
+    quantity = Column(Integer, nullable=False)
+    sale_price = Column(Numeric(12, 2), nullable=False)
+    sale_date = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class User(Base):
+    __tablename__ = 'users'
+
+    id = Column(Integer, primary_key=True, index=True)
+    full_name = Column(String(255), nullable=False)
+    email = Column(String(255), nullable=False, unique=True, index=True)
+    password_hash = Column(String(255), nullable=False)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
 
 
