@@ -1,3 +1,8 @@
+# Stock Management (Monorepo)
+
+This repository contains a Next.js frontend and a FastAPI backend (in `backend/`).
+
+To run the backend locally see `backend/README.md`.
 # Stock management app
 
 *Automatically synced with your [v0.app](https://v0.app) deployments*
