@@ -1,0 +1,28 @@
+from fastapi import FastAPI, Depends, HTTPException
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy.ext.asyncio import AsyncEngine
+from . import crud, models, schemas
+from .database import engine, Base, get_db
+from .routers import products, suppliers
+
+app = FastAPI(title="Stock Management API")
+
+
+@app.on_event("startup")
+async def on_startup():
+    # create tables if they don't exist using synchronous metadata on the async engine
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+
+
+# include routers
+app.include_router(products.router)
+app.include_router(suppliers.router)
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000", "*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
