@@ -1,41 +1,43 @@
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from . import models, schemas
 from sqlalchemy import select
+from typing import List, Optional
 
 
-def get_product(db: Session, product_id: int):
-    return db.get(models.Product, product_id)
+async def get_product(db: AsyncSession, product_id: int) -> Optional[models.Product]:
+    return await db.get(models.Product, product_id)
 
 
-def get_products(db: Session, skip: int = 0, limit: int = 100):
+async def get_products(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[models.Product]:
     stmt = select(models.Product).offset(skip).limit(limit)
-    return db.execute(stmt).scalars().all()
+    result = await db.execute(stmt)
+    return result.scalars().all()
 
 
-def create_product(db: Session, product: schemas.ProductCreate):
+async def create_product(db: AsyncSession, product: schemas.ProductCreate) -> models.Product:
     db_product = models.Product(**product.dict())
     db.add(db_product)
-    db.commit()
-    db.refresh(db_product)
+    await db.commit()
+    await db.refresh(db_product)
     return db_product
 
 
-def update_product(db: Session, product_id: int, updates: schemas.ProductUpdate):
-    db_product = db.get(models.Product, product_id)
+async def update_product(db: AsyncSession, product_id: int, updates: schemas.ProductUpdate) -> Optional[models.Product]:
+    db_product = await db.get(models.Product, product_id)
     if not db_product:
         return None
     for k, v in updates.dict(exclude_unset=True).items():
         setattr(db_product, k, v)
     db.add(db_product)
-    db.commit()
-    db.refresh(db_product)
+    await db.commit()
+    await db.refresh(db_product)
     return db_product
 
 
-def delete_product(db: Session, product_id: int):
-    db_product = db.get(models.Product, product_id)
+async def delete_product(db: AsyncSession, product_id: int) -> bool:
+    db_product = await db.get(models.Product, product_id)
     if not db_product:
         return False
-    db.delete(db_product)
-    db.commit()
+    await db.delete(db_product)
+    await db.commit()
     return True
