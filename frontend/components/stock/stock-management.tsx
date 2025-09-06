@@ -1,12 +1,13 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { StockTable } from "./stock-table"
 import { AddProductDialog } from "./add-product-dialog"
 import { EditProductDialog } from "./edit-product-dialog"
+import { SupplierForm, CategoryForm } from "./forms"
 import { Plus, Search } from "lucide-react"
 
 export interface Product {
@@ -14,6 +15,7 @@ export interface Product {
   name: string
   sku: string
   category: string
+  description: string
   quantity: number
   price: number
   lowStockThreshold: number
@@ -21,70 +23,69 @@ export interface Product {
   lastUpdated: string
 }
 
-// Mock data for demonstration
-const initialProducts: Product[] = [
-  {
-    id: "1",
-    name: "Wireless Headphones",
-    sku: "WH-001",
-    category: "Electronics",
-    quantity: 45,
-    price: 99.99,
-    lowStockThreshold: 10,
-    supplier: "TechCorp",
-    lastUpdated: "2024-01-15",
-  },
-  {
-    id: "2",
-    name: "Bluetooth Speaker",
-    sku: "BS-002",
-    category: "Electronics",
-    quantity: 8,
-    price: 79.99,
-    lowStockThreshold: 15,
-    supplier: "AudioMax",
-    lastUpdated: "2024-01-14",
-  },
-  {
-    id: "3",
-    name: "USB-C Cable",
-    sku: "UC-003",
-    category: "Accessories",
-    quantity: 120,
-    price: 19.99,
-    lowStockThreshold: 25,
-    supplier: "CableCo",
-    lastUpdated: "2024-01-13",
-  },
-  {
-    id: "4",
-    name: "Laptop Stand",
-    sku: "LS-004",
-    category: "Accessories",
-    quantity: 3,
-    price: 49.99,
-    lowStockThreshold: 5,
-    supplier: "DeskPro",
-    lastUpdated: "2024-01-12",
-  },
-  {
-    id: "5",
-    name: "Wireless Mouse",
-    sku: "WM-005",
-    category: "Electronics",
-    quantity: 67,
-    price: 29.99,
-    lowStockThreshold: 20,
-    supplier: "TechCorp",
-    lastUpdated: "2024-01-11",
-  },
-]
-
 export function StockManagement() {
-  const [products, setProducts] = useState<Product[]>(initialProducts)
+  const [products, setProducts] = useState<Product[]>([])
+  const [categories, setCategories] = useState<string[]>([])
+  const [suppliers, setSuppliers] = useState<string[]>([])
   const [searchTerm, setSearchTerm] = useState("")
   const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
+  const [isAddSupplierOpen, setIsAddSupplierOpen] = useState(false)
+  const [isCreateCategoryOpen, setIsCreateCategoryOpen] = useState(false)
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
+
+  // Fetch suppliers and categories from backend on mount
+  useEffect(() => {
+    let mounted = true
+
+    ;(async () => {
+      try {
+        const [prodsRes, catsRes, supsRes] = await Promise.all([
+          fetch("http://localhost:8000/products/"),
+          fetch("http://localhost:8000/categories/"),
+          fetch("http://localhost:8000/suppliers/"),
+        ])
+
+        if (!mounted) return
+
+        if (prodsRes.ok) {
+          const prodsData = await prodsRes.json()
+          const mapped = Array.isArray(prodsData)
+            ? prodsData.map((p: any) => ({
+                id: String(p.id ?? ""),
+                name: p.name ?? "",
+                sku: p.sku ?? "",
+                category: p.category?.name ?? p.category ?? "",
+                description: p.description ?? "",
+                quantity: Number(p.quantity ?? 0),
+                price: Number(p.price ?? 0),
+                lowStockThreshold: Number(p.low_stock_threshold ?? p.lowStockThreshold ?? 0),
+                supplier: p.supplier?.name ?? p.supplier ?? "",
+                lastUpdated: p.last_updated ?? p.lastUpdated ?? "",
+              }))
+            : []
+          if (mapped.length) setProducts(mapped)
+        }
+
+        if (catsRes.ok) {
+          const catsData = await catsRes.json()
+          const names = Array.isArray(catsData) ? catsData.map((c: any) => (typeof c === "string" ? c : c.name ?? String(c))) : []
+          if (names.length) setCategories(names)
+        }
+
+        if (supsRes.ok) {
+          const supsData = await supsRes.json()
+          const names = Array.isArray(supsData) ? supsData.map((s: any) => (typeof s === "string" ? s : s.name ?? String(s))) : []
+          if (names.length) setSuppliers(names)
+        }
+      } catch (err) {
+        console.error("Error fetching products, categories or suppliers", err)
+      }
+    })()
+
+    return () => {
+      mounted = false
+    }
+  }, [])
 
   const filteredProducts = products.filter(
     (product) =>
@@ -107,6 +108,47 @@ export function StockManagement() {
     setProducts([...products, product])
   }
 
+  // Persist a new supplier to the backend
+  const handleAddSupplier = async (supplier: { name: string; email?: string; phone?: string; address?: string }) => {
+    try {
+      const res = await fetch("http://localhost:8000/suppliers/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: supplier.name, email: supplier.email, phone: supplier.phone, address: supplier.address }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        console.error("Failed to create supplier", err)
+        return
+      }
+      const created = await res.json()
+      console.log("Supplier created", created)
+      // optionally update local product supplier lists or UI
+    } catch (err) {
+      console.error("Error creating supplier", err)
+    }
+  }
+
+  // Persist a new category to the backend
+  const handleCreateCategory = async (category: { name: string; description?: string }) => {
+    try {
+      const res = await fetch("http://localhost:8000/categories/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: category.name, description: category.description }),
+      })
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        console.error("Failed to create category", err)
+        return
+      }
+      const created = await res.json()
+      console.log("Category created", created)
+    } catch (err) {
+      console.error("Error creating category", err)
+    }
+  }
+
   const handleEditProduct = (updatedProduct: Product) => {
     setProducts(
       products.map((p) =>
@@ -120,6 +162,45 @@ export function StockManagement() {
     setProducts(products.filter((p) => p.id !== id))
   }
 
+  // Handlers for supplier/category dialogs
+  const handleSaveSupplier = async (s: { name: string; email?: string; phone?: string; address?: string }) => {
+    try {
+      const res = await fetch("http://localhost:8000/suppliers/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: s.name, email: s.email, phone: s.phone, address: s.address }),
+      })
+      if (res.ok) {
+        const created = await res.json()
+        setSuppliers((prev) => (prev.includes(created.name) ? prev : [...prev, created.name]))
+        setIsAddSupplierOpen(false)
+      } else {
+        console.error("Failed to create supplier", await res.text())
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
+  const handleSaveCategory = async (c: { name: string; description?: string }) => {
+    try {
+      const res = await fetch("http://localhost:8000/categories/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ name: c.name, description: c.description }),
+      })
+      if (res.ok) {
+        const created = await res.json()
+        setCategories((prev) => (prev.includes(created.name) ? prev : [...prev, created.name]))
+        setIsCreateCategoryOpen(false)
+      } else {
+        console.error("Failed to create category", await res.text())
+      }
+    } catch (err) {
+      console.error(err)
+    }
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
@@ -127,10 +208,20 @@ export function StockManagement() {
           <h1 className="text-3xl font-bold">Stock Management</h1>
           <p className="text-muted-foreground">Manage your inventory and track stock levels</p>
         </div>
-        <Button onClick={() => setIsAddDialogOpen(true)}>
-          <Plus className="mr-2 h-4 w-4" />
-          Add Product
-        </Button>
+        <div className="space-x-2">
+          <Button onClick={() => setIsAddSupplierOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Supplier
+          </Button>
+          <Button onClick={() => setIsCreateCategoryOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Create Category
+          </Button>
+          <Button onClick={() => setIsAddDialogOpen(true)}>
+            <Plus className="mr-2 h-4 w-4" />
+            Add Product
+          </Button>
+        </div>
       </div>
 
       {/* Summary Cards */}
@@ -188,7 +279,22 @@ export function StockManagement() {
       </Card>
 
       {/* Dialogs */}
-      <AddProductDialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen} onAdd={handleAddProduct} />
+      <AddProductDialog open={isAddDialogOpen} onOpenChange={setIsAddDialogOpen} onAdd={handleAddProduct} suppliers={suppliers} categories={categories} />
+
+      {/* Controlled dialogs for supplier and category (use Dialog UI from forms) */}
+      <SupplierForm
+        open={isAddSupplierOpen}
+        onOpenChange={setIsAddSupplierOpen}
+        onCancel={() => setIsAddSupplierOpen(false)}
+        onSave={(s) => handleSaveSupplier(s)}
+      />
+
+      <CategoryForm
+        open={isCreateCategoryOpen}
+        onOpenChange={setIsCreateCategoryOpen}
+        onCancel={() => setIsCreateCategoryOpen(false)}
+        onSave={(c) => handleSaveCategory(c)}
+      />
 
       {editingProduct && (
         <EditProductDialog

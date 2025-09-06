@@ -3,11 +3,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from .. import models, schemas
 from ..database import get_db
+from sqlalchemy import select
 
 router = APIRouter(prefix="/sales", tags=["sales"])
 
 
-@router.post("/sales", response_model=schemas.ProductSaleOut)
+@router.post("/", response_model=schemas.ProductSaleOut)
 async def record_sale(sale: schemas.ProductSaleCreate, db: AsyncSession = Depends(get_db)):
     # simple sale recording and product quantity adjustment
     product = await db.get(models.Product, sale.product_id)
@@ -24,7 +25,7 @@ async def record_sale(sale: schemas.ProductSaleCreate, db: AsyncSession = Depend
     return db_sale
 
 
-@router.get("/sales", response_model=List[schemas.ProductSaleOut])
+@router.get("/", response_model=List[schemas.ProductSaleOut])
 async def list_sales(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(models.ProductSale.__table__.select())
+    result = await db.execute(select(models.ProductSale))
     return result.scalars().all()

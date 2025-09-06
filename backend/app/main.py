@@ -5,12 +5,11 @@ from . import crud, models, schemas
 from .database import engine, Base, get_db
 from .routers import products, suppliers, product_categories, product_sales, users
 
-app = FastAPI(title="Stock Management API")
+app = FastAPI(title="Stock Management API", debug=True)
 
 
 @app.on_event("startup")
 async def on_startup():
-    # create tables if they don't exist using synchronous metadata on the async engine
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

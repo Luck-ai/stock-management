@@ -1,13 +1,14 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from .. import models, schemas
 from ..database import get_db
+from sqlalchemy import select
 
 router = APIRouter(prefix="/categories", tags=["categories"])
 
 
-@router.post("/category", response_model=schemas.ProductCategoryOut)
+@router.post("/", response_model=schemas.ProductCategoryOut)
 async def create_category(cat: schemas.ProductCategoryCreate, db: AsyncSession = Depends(get_db)):
     db_cat = models.ProductCategory(**cat.dict())
     db.add(db_cat)
@@ -16,7 +17,7 @@ async def create_category(cat: schemas.ProductCategoryCreate, db: AsyncSession =
     return db_cat
 
 
-@router.get("/category", response_model=List[schemas.ProductCategoryOut])
+@router.get("/", response_model=List[schemas.ProductCategoryOut])
 async def list_categories(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(models.ProductCategory.__table__.select())
+    result = await db.execute(select(models.ProductCategory))
     return result.scalars().all()

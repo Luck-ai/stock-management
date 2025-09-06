@@ -23,21 +23,27 @@ export function LoginForm() {
     e.preventDefault()
     setIsLoading(true)
     setError("")
-
-    // Simulate authentication
+    // Call backend login endpoint
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      const res = await fetch("http://localhost:8000/users/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password }),
+      })
 
-      // For demo purposes, accept any email/password
-      if (email && password) {
-        localStorage.setItem("isAuthenticated", "true")
-        localStorage.setItem("userEmail", email)
-        router.push("/dashboard")
-      } else {
-        setError("Please enter both email and password")
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setError(err.detail || err.message || "Invalid credentials")
+        return
       }
+
+      const user = await res.json()
+      // Persist minimal auth state for the demo app
+      localStorage.setItem("isAuthenticated", "true")
+      localStorage.setItem("userEmail", user.email || email)
+      router.push("/dashboard")
     } catch (err) {
-      setError("Login failed. Please try again.")
+      setError("Login failed. Please check your connection and try again.")
     } finally {
       setIsLoading(false)
     }

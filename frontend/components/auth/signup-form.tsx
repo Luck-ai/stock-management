@@ -49,15 +49,26 @@ export function SignupForm() {
       return
     }
 
-    // Simulate account creation
+    // Call backend create user endpoint
     try {
-      await new Promise((resolve) => setTimeout(resolve, 1000))
+      const res = await fetch("http://localhost:8000/users/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ full_name: formData.name, email: formData.email, password: formData.password }),
+      })
 
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        setError(err.detail || err.message || "Account creation failed")
+        return
+      }
+
+      const user = await res.json()
       localStorage.setItem("isAuthenticated", "true")
-      localStorage.setItem("userEmail", formData.email)
+      localStorage.setItem("userEmail", user.email || formData.email)
       router.push("/dashboard")
     } catch (err) {
-      setError("Account creation failed. Please try again.")
+      setError("Account creation failed. Please check your connection and try again.")
     } finally {
       setIsLoading(false)
     }
