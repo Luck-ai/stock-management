@@ -1,9 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List
 from .. import models, schemas
 from ..database import get_db
-from ..crud import create_product
 from .. import crud
 
 router = APIRouter(prefix="/suppliers", tags=["suppliers"])
@@ -20,7 +20,7 @@ async def create_supplier(supplier: schemas.SupplierCreate, db: AsyncSession = D
 
 @router.get("/", response_model=List[schemas.SupplierOut])
 async def list_suppliers(db: AsyncSession = Depends(get_db)):
-    result = await db.execute(models.Supplier.__table__.select())
+    result = await db.execute(select(models.Supplier))
     return result.scalars().all()
 
 

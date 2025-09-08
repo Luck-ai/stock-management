@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import {
   Dialog,
@@ -21,52 +21,180 @@ interface AddProductDialogProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   onAdd: (product: Omit<Product, "id" | "lastUpdated">) => void
+  suppliers?: string[]
+  categories?: string[]
 }
 
-const categories = ["Electronics", "Accessories", "Clothing", "Books", "Home & Garden"]
-const suppliers = ["TechCorp", "AudioMax", "CableCo", "DeskPro", "GlobalSupply"]
+// initial lists (fallback)
+// const initialCategories = ["Electronics", "Accessories", "Clothing", "Books", "Home & Garden"]
+// const initialSuppliers = ["TechCorp", "AudioMax", "CableCo", "DeskPro", "GlobalSupply"]
 
-export function AddProductDialog({ open, onOpenChange, onAdd }: AddProductDialogProps) {
+export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSuppliers, categories: propCategories }: AddProductDialogProps) {
   const [formData, setFormData] = useState({
     name: "",
     sku: "",
     category: "",
+    description: "",
     quantity: "",
     price: "",
     lowStockThreshold: "",
-    supplier: "",
+    supplierId: "",
   })
+  // store full objects so we can map to ids
+  const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
+  const [suppliers, setSuppliers] = useState<{ id: number; name: string }[]>([])
 
-  const handleSubmit = (e: React.FormEvent) => {
+  useEffect(() => {
+    let mounted = true
+
+    // If parent passed categories, prefer them
+    if (propCategories && propCategories.length) {
+      setCategories(propCategories.map((c) => ({ id: 0, name: c })))
+    } else {
+      ;(async () => {
+        try {
+          const res = await fetch("http://localhost:8000/categories/")
+          if (!res.ok) throw new Error(`Failed to fetch categories: ${res.status}`)
+          const data = await res.json()
+          if (!mounted) return
+          // Expecting array of objects with id & name OR plain strings
+          const list = Array.isArray(data)
+            ? data.map((c: any) =>
+                typeof c === "string"
+                  ? { id: 0, name: c }
+                  : { id: c.id ?? 0, name: c.name ?? String(c) },
+              )
+            : []
+          setCategories(list)
+        } catch (err) {
+          console.error("Error fetching categories", err)
+          if (mounted) setCategories([])
+        }
+      })()
+    }
+
+    // If parent passed suppliers, prefer them (map strings to {id,name})
+    if (propSuppliers && propSuppliers.length) {
+      setSuppliers(propSuppliers.map((s) => ({ id: 0, name: s })))
+    } else {
+      ;(async () => {
+        try {
+          const res = await fetch("http://localhost:8000/suppliers/")
+          if (!res.ok) throw new Error(`Failed to fetch suppliers: ${res.status}`)
+          const data = await res.json()
+          if (!mounted) return
+          const list = Array.isArray(data)
+            ? data.map((s: any) => (typeof s === "string" ? { id: 0, name: s } : { id: s.id ?? 0, name: s.name ?? String(s) }))
+            : []
+          setSuppliers(list)
+        } catch (err) {
+          console.error("Error fetching suppliers", err)
+          if (mounted) setSuppliers([])
+        }
+      })()
+    }
+
+    return () => {
+      mounted = false
+    }
+  }, [propCategories, propSuppliers])
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    onAdd({
+    // supplier id (if selected): supplierId may be an id string or a name fallback
+    let supplier_id: number | null = null
+    if (formData.supplierId) {
+      const asNum = Number.parseInt(formData.supplierId)
+      if (!Number.isNaN(asNum) && asNum > 0) supplier_id = asNum
+      else {
+        // try to find supplier by name in fetched suppliers
+        const found = suppliers.find((s) => s.name === formData.supplierId)
+        if (found && found.id && found.id > 0) supplier_id = found.id
+      }
+    }
+
+    // category id mapping
+    let category_id: number | null = null
+    if (formData.category) {
+      const asNum = Number.parseInt(formData.category)
+      if (!Number.isNaN(asNum) && asNum > 0) category_id = asNum
+      else {
+        const found = categories.find((c) => c.name === formData.category)
+        if (found && found.id && found.id > 0) category_id = found.id
+      }
+    }
+
+    const payload = {
       name: formData.name,
-      sku: formData.sku,
-      category: formData.category,
-      quantity: Number.parseInt(formData.quantity),
-      price: Number.parseFloat(formData.price),
-      lowStockThreshold: Number.parseInt(formData.lowStockThreshold),
-      supplier: formData.supplier,
-    })
+      sku: formData.sku || undefined,
+      category_id: category_id ?? undefined,
+      description: formData.description || undefined,
+      price: Number.parseFloat(formData.price) || 0,
+      quantity: Number.parseInt(formData.quantity) || 0,
+      low_stock_threshold: Number.parseInt(formData.lowStockThreshold) || 0,
+      supplier_id: supplier_id,
+    }
 
-    // Reset form
-    setFormData({
-      name: "",
-      sku: "",
-      category: "",
-      quantity: "",
-      price: "",
-      lowStockThreshold: "",
-      supplier: "",
-    })
+    try {
+      const res = await fetch("http://localhost:8000/products/", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
 
-    onOpenChange(false)
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}))
+        console.error("Failed to create product", err)
+        // still close dialog but do not add locally
+        onOpenChange(false)
+        return
+      }
+
+      const created = await res.json()
+      // find supplier & category names for local UI shape
+      const supplierName =
+        (created.supplier && created.supplier.name) || (supplier_id ? suppliers.find((s) => s.id === supplier_id)?.name ?? "" : "")
+      const categoryName =
+        (created.category && (created.category.name || created.category)) ||
+        (category_id ? categories.find((c) => c.id === category_id)?.name ?? "" : "")
+
+      // call parent onAdd with the product data in the shape it expects
+      onAdd({
+        name: created.name ?? payload.name,
+        sku: created.sku ?? payload.sku ?? "",
+        category: categoryName || "",
+        description: created.description ?? payload.description ?? "",
+        quantity: created.quantity ?? payload.quantity,
+        price: created.price ?? payload.price,
+        lowStockThreshold: created.low_stock_threshold ?? payload.low_stock_threshold,
+        supplier: supplierName || "",
+      })
+
+      // Reset form
+      setFormData({
+        name: "",
+        sku: "",
+        category: "",
+        description: "",
+        quantity: "",
+        price: "",
+        lowStockThreshold: "",
+        supplierId: "",
+      })
+
+      onOpenChange(false)
+    } catch (err) {
+      console.error("Error creating product", err)
+      onOpenChange(false)
+    }
   }
 
   const handleChange = (field: string, value: string) => {
     setFormData((prev) => ({ ...prev, [field]: value }))
   }
+
+  // supplier/category creation moved to parent dashboard
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -112,13 +240,31 @@ export function AddProductDialog({ open, onOpenChange, onAdd }: AddProductDialog
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
-                  {categories.map((category) => (
-                    <SelectItem key={category} value={category}>
-                      {category}
-                    </SelectItem>
-                  ))}
+                  {categories.map((c, idx) => {
+                    const useId = Boolean(c.id && c.id > 0)
+                    const baseKey = useId ? `cat-${c.id}` : `cat-${c.name}`
+                    const key = `${baseKey}-${idx}`
+                    const value = useId ? String(c.id) : c.name
+                    return (
+                      <SelectItem key={key} value={value}>
+                        {c.name}
+                      </SelectItem>
+                    )
+                  })}
                 </SelectContent>
               </Select>
+            </div>
+            <div className="grid grid-cols-4 items-center gap-4">
+              <Label htmlFor="description" className="text-right">
+                Description
+              </Label>
+              <Input
+                id="description"
+                value={formData.description}
+                onChange={(e) => handleChange("description", e.target.value)}
+                className="col-span-3"
+                placeholder="Optional description"
+              />
             </div>
             <div className="grid grid-cols-4 items-center gap-4">
               <Label htmlFor="quantity" className="text-right">
@@ -164,19 +310,26 @@ export function AddProductDialog({ open, onOpenChange, onAdd }: AddProductDialog
               <Label htmlFor="supplier" className="text-right">
                 Supplier
               </Label>
-              <Select value={formData.supplier} onValueChange={(value) => handleChange("supplier", value)}>
+              <Select value={formData.supplierId} onValueChange={(value) => handleChange("supplierId", value)}>
                 <SelectTrigger className="col-span-3">
                   <SelectValue placeholder="Select supplier" />
                 </SelectTrigger>
                 <SelectContent>
-                  {suppliers.map((supplier) => (
-                    <SelectItem key={supplier} value={supplier}>
-                      {supplier}
-                    </SelectItem>
-                  ))}
+                  {suppliers.map((supplier, idx) => {
+                    const useId = Boolean(supplier.id && supplier.id > 0)
+                    const baseKey = useId ? `supplier-${supplier.id}` : `supplier-${supplier.name}`
+                    const key = `${baseKey}-${idx}`
+                    const value = useId ? String(supplier.id) : supplier.name
+                    return (
+                      <SelectItem key={key} value={value}>
+                        {supplier.name}
+                      </SelectItem>
+                    )
+                  })}
                 </SelectContent>
               </Select>
             </div>
+            {/* supplier/category creation moved to dashboard */}
           </div>
           <DialogFooter>
             <Button type="submit">Add Product</Button>
