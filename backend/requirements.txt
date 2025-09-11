@@ -8,3 +8,4 @@ pydantic
 alembic
 python-dotenv
 python-jose[cryptography]
+Jinja2

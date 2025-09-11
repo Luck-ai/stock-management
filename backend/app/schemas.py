@@ -105,6 +105,14 @@ class UserCreate(UserBase):
 
 class UserOut(UserBase):
     id: int
+    is_verified: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class UserOut(UserBase):
+    id: int
 
     class Config:
         from_attributes = True
@@ -113,6 +121,15 @@ class UserOut(UserBase):
 class UserLogin(BaseModel):
     email: str
     password: str
+
+
+class VerifyRequest(BaseModel):
+    email: str
+
+
+class VerifyResponse(BaseModel):
+    status: str
+    detail: str
 
 
 class Token(BaseModel):

@@ -64,27 +64,19 @@ export function SignupForm() {
       }
 
       const created = await res.json()
-      // Auto-login to obtain JWT token
+      // After creating account, request a verification email and show a message
       try {
-        const loginRes = await apiFetch('/users/login', {
+        await apiFetch('/users/send-verification', {
           method: 'POST',
-          body: JSON.stringify({ email: formData.email, password: formData.password }),
+          body: JSON.stringify({ email: formData.email }),
         })
-        if (loginRes.ok) {
-          const loginData = await loginRes.json()
-          if (loginData && loginData.access_token) {
-            localStorage.setItem('access_token', loginData.access_token)
-            localStorage.setItem('token_type', loginData.token_type || 'bearer')
-          }
-        }
+        localStorage.setItem("userEmail", created.email || formData.email)
+        router.push('/signup/verify-sent')
+        return
       } catch (e) {
-        // ignore login error and continue
-        console.warn('Auto-login failed', e)
+        // fall back to redirect to dashboard if verification request fails
+        console.warn('Verification request failed', e)
       }
-
-      localStorage.setItem("isAuthenticated", "true")
-      localStorage.setItem("userEmail", created.email || formData.email)
-      router.push("/dashboard")
     } catch (err) {
       setError("Account creation failed. Please check your connection and try again.")
     } finally {
