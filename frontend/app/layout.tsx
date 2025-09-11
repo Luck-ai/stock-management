@@ -1,4 +1,4 @@
-import type React from "react"
+import type { ReactNode } from "react"
 import type { Metadata } from "next"
 import { GeistSans } from "geist/font/sans"
 import { GeistMono } from "geist/font/mono"
@@ -7,7 +7,7 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { Suspense } from "react"
 import "./globals.css"
 
-import AuthRouteWrapper from "@/components/AuthRouteWrapper"
+
 
 export const metadata: Metadata = {
   title: "Stock Manager Pro",
@@ -18,7 +18,7 @@ export const metadata: Metadata = {
 export default function RootLayout({
   children,
 }: Readonly<{
-  children: React.ReactNode
+  children: ReactNode
 }>) {
   return (
     <html lang="en" suppressHydrationWarning>
@@ -31,10 +31,7 @@ export default function RootLayout({
             disableTransitionOnChange={false}
             storageKey="stock-manager-theme"
           >
-            {/* wrap children so auth pages get a different background */}
-            <AuthRouteWrapper>
               {children}
-            </AuthRouteWrapper>
           </ThemeProvider>
         </Suspense>
         <Analytics />

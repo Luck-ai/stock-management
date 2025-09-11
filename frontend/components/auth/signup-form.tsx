@@ -64,7 +64,6 @@ export function SignupForm() {
       }
 
       const created = await res.json()
-      // After creating account, request a verification email and show a message
       try {
         await apiFetch('/users/send-verification', {
           method: 'POST',

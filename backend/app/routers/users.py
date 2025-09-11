@@ -57,8 +57,6 @@ async def login(data: schemas.UserLogin, db: AsyncSession = Depends(get_db)):
     token = create_access_token(data={"sub": str(user.id)}, expires_delta=access_token_expires)
     return {"access_token": token, "token_type": "bearer"}
 
-
-
 @router.post('/send-verification')
 async def send_verification(request: schemas.VerifyRequest, background_tasks: BackgroundTasks, db: AsyncSession = Depends(get_db)):
     # find user and ensure token exists

@@ -133,4 +133,12 @@
 @layer utilities {
   .bg-auth-background { background-color: var(--auth-background) !important; }
   .text-auth-foreground { color: var(--auth-foreground) !important; }
+  /* Auth hero background: purple gradient with subtle vignette */
+  .auth-hero {
+    background: radial-gradient(1200px 600px at 10% 20%, rgba(81,73,130,0.6), transparent 10%),
+                radial-gradient(1000px 500px at 90% 80%, rgba(81,73,130,0.45), transparent 18%),
+                linear-gradient(180deg, #2b244b 0%, #2e244f 40%, #24163a 100%);
+    background-size: cover;
+    background-position: center;
+  }
 }

@@ -10,7 +10,6 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
-import { apiFetch } from '@/lib/api'
 
 export function LoginForm() {
   const [email, setEmail] = useState("")
@@ -26,8 +25,9 @@ export function LoginForm() {
     setError("")
     // Call backend login endpoint
     try {
-      const res = await apiFetch('/users/login', {
-        method: 'POST',
+      const res = await fetch("http://localhost:8000/users/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email, password }),
       })
 
