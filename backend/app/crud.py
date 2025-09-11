@@ -6,8 +6,11 @@ from sqlalchemy.orm import selectinload
 from typing import List, Optional
 
 
-async def get_product(db: AsyncSession, product_id: int) -> Optional[models.Product]:
-    stmt = select(models.Product).where(models.Product.id == product_id).options(
+async def get_product(db: AsyncSession, product_id: int, user_id: Optional[int] = None) -> Optional[models.Product]:
+    stmt = select(models.Product).where(models.Product.id == product_id)
+    if user_id is not None:
+        stmt = stmt.where(models.Product.user_id == user_id)
+    stmt = stmt.options(
         selectinload(models.Product.supplier),
         selectinload(models.Product.category),
     )
@@ -15,8 +18,11 @@ async def get_product(db: AsyncSession, product_id: int) -> Optional[models.Prod
     return result.scalars().first()
 
 
-async def get_products(db: AsyncSession, skip: int = 0, limit: int = 100) -> List[models.Product]:
-    stmt = select(models.Product).options(
+async def get_products(db: AsyncSession, skip: int = 0, limit: int = 100, user_id: Optional[int] = None) -> List[models.Product]:
+    stmt = select(models.Product)
+    if user_id is not None:
+        stmt = stmt.where(models.Product.user_id == user_id)
+    stmt = stmt.options(
         selectinload(models.Product.supplier),
         selectinload(models.Product.category),
     ).offset(skip).limit(limit)
@@ -54,9 +60,12 @@ async def create_product(db: AsyncSession, product: schemas.ProductCreate) -> mo
     return result.scalars().first()
 
 
-async def update_product(db: AsyncSession, product_id: int, updates: schemas.ProductUpdate) -> Optional[models.Product]:
+async def update_product(db: AsyncSession, product_id: int, updates: schemas.ProductUpdate, user_id: Optional[int] = None) -> Optional[models.Product]:
     # load product with relationships
-    stmt = select(models.Product).where(models.Product.id == product_id).options(
+    stmt = select(models.Product).where(models.Product.id == product_id)
+    if user_id is not None:
+        stmt = stmt.where(models.Product.user_id == user_id)
+    stmt = stmt.options(
         selectinload(models.Product.supplier),
         selectinload(models.Product.category),
     )
@@ -93,8 +102,14 @@ async def update_product(db: AsyncSession, product_id: int, updates: schemas.Pro
     return result.scalars().first()
 
 
-async def delete_product(db: AsyncSession, product_id: int) -> bool:
-    db_product = await db.get(models.Product, product_id)
+async def delete_product(db: AsyncSession, product_id: int, user_id: Optional[int] = None) -> bool:
+    # enforce ownership if user_id provided
+    if user_id is None:
+        db_product = await db.get(models.Product, product_id)
+    else:
+        stmt = select(models.Product).where(models.Product.id == product_id, models.Product.user_id == user_id)
+        result = await db.execute(stmt)
+        db_product = result.scalars().first()
     if not db_product:
         return False
     await db.delete(db_product)

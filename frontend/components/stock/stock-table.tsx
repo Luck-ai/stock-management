@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Edit, Trash2, AlertTriangle, Eye } from "lucide-react"
+import { apiFetch } from '@/lib/api'
 import type { Product } from "./stock-management"
 
 interface StockTableProps {
@@ -33,7 +34,7 @@ export function StockTable({ products, onEdit, onDelete }: StockTableProps) {
       setLoading(true)
       setError(null)
       try {
-        const res = await fetch("http://localhost:8000/products/")
+  const res = await apiFetch('/products/')
         if (!mounted) return
         if (!res.ok) {
           const text = await res.text()

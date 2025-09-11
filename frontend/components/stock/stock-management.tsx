@@ -9,6 +9,7 @@ import { AddProductDialog } from "./add-product-dialog"
 import { EditProductDialog } from "./edit-product-dialog"
 import { SupplierForm, CategoryForm } from "./forms"
 import { Plus, Search } from "lucide-react"
+import { apiFetch } from '@/lib/api'
 
 export interface Product {
   id: string
@@ -40,9 +41,9 @@ export function StockManagement() {
     ;(async () => {
       try {
         const [prodsRes, catsRes, supsRes] = await Promise.all([
-          fetch("http://localhost:8000/products/"),
-          fetch("http://localhost:8000/categories/"),
-          fetch("http://localhost:8000/suppliers/"),
+          apiFetch('/products/'),
+          apiFetch('/categories/'),
+          apiFetch('/suppliers/'),
         ])
 
         if (!mounted) return
@@ -111,7 +112,7 @@ export function StockManagement() {
   // Persist a new supplier to the backend
   const handleAddSupplier = async (supplier: { name: string; email?: string; phone?: string; address?: string }) => {
     try {
-      const res = await fetch("http://localhost:8000/suppliers/", {
+      const res = await apiFetch('/suppliers/', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: supplier.name, email: supplier.email, phone: supplier.phone, address: supplier.address }),
@@ -132,7 +133,7 @@ export function StockManagement() {
   // Persist a new category to the backend
   const handleCreateCategory = async (category: { name: string; description?: string }) => {
     try {
-      const res = await fetch("http://localhost:8000/categories/", {
+      const res = await apiFetch('/categories/', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: category.name, description: category.description }),
@@ -165,7 +166,7 @@ export function StockManagement() {
   // Handlers for supplier/category dialogs
   const handleSaveSupplier = async (s: { name: string; email?: string; phone?: string; address?: string }) => {
     try {
-      const res = await fetch("http://localhost:8000/suppliers/", {
+      const res = await apiFetch('/suppliers/', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: s.name, email: s.email, phone: s.phone, address: s.address }),
@@ -184,7 +185,7 @@ export function StockManagement() {
 
   const handleSaveCategory = async (c: { name: string; description?: string }) => {
     try {
-      const res = await fetch("http://localhost:8000/categories/", {
+      const res = await apiFetch('/categories/', {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: c.name, description: c.description }),

@@ -4,6 +4,7 @@ import type React from "react"
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
+import { apiFetch } from '@/lib/api'
 import {
   Dialog,
   DialogContent,
@@ -53,7 +54,7 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
     } else {
       ;(async () => {
         try {
-          const res = await fetch("http://localhost:8000/categories/")
+          const res = await apiFetch('/categories/')
           if (!res.ok) throw new Error(`Failed to fetch categories: ${res.status}`)
           const data = await res.json()
           if (!mounted) return
@@ -79,7 +80,7 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
     } else {
       ;(async () => {
         try {
-          const res = await fetch("http://localhost:8000/suppliers/")
+          const res = await apiFetch('/suppliers/')
           if (!res.ok) throw new Error(`Failed to fetch suppliers: ${res.status}`)
           const data = await res.json()
           if (!mounted) return
@@ -137,9 +138,9 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
     }
 
     try {
-      const res = await fetch("http://localhost:8000/products/", {
+      const res = await apiFetch('/products/', {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        // apiFetch will set Content-Type when body is present
         body: JSON.stringify(payload),
       })
 

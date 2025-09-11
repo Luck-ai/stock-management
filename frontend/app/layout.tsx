@@ -7,10 +7,12 @@ import { ThemeProvider } from "@/components/theme-provider"
 import { Suspense } from "react"
 import "./globals.css"
 
+import AuthRouteWrapper from "@/components/AuthRouteWrapper"
+
 export const metadata: Metadata = {
   title: "Stock Manager Pro",
   description: "Professional inventory management system",
-  generator: "v0.app",
+  generator: "OptiStock",
 }
 
 export default function RootLayout({
@@ -29,7 +31,10 @@ export default function RootLayout({
             disableTransitionOnChange={false}
             storageKey="stock-manager-theme"
           >
-            {children}
+            {/* wrap children so auth pages get a different background */}
+            <AuthRouteWrapper>
+              {children}
+            </AuthRouteWrapper>
           </ThemeProvider>
         </Suspense>
         <Analytics />

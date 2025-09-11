@@ -6,6 +6,8 @@ from .. import models, schemas
 from ..database import get_db
 import hashlib
 import logging
+from ..security import create_access_token
+from datetime import timedelta
 
 router = APIRouter(prefix="/users", tags=["users"])
 
@@ -32,11 +34,14 @@ async def list_users(db: AsyncSession = Depends(get_db)):
 
 
 
-@router.post('/login', response_model=schemas.UserOut)
+@router.post('/login', response_model=schemas.Token)
 async def login(data: schemas.UserLogin, db: AsyncSession = Depends(get_db)):
     hashed = _hash_password(data.password)
     result = await db.execute(select(models.User).where(models.User.email == data.email))
     user = result.scalars().first()
     if not user or user.password_hash != hashed:
         raise HTTPException(status_code=401, detail='Invalid credentials')
-    return user
+    # create token with subject = user.id
+    access_token_expires = timedelta(minutes=60)
+    token = create_access_token(data={"sub": str(user.id)}, expires_delta=access_token_expires)
+    return {"access_token": token, "token_type": "bearer"}

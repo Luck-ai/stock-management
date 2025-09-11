@@ -16,6 +16,7 @@ class SupplierCreate(SupplierBase):
 
 class SupplierOut(SupplierBase):
     id: int
+    user_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -51,6 +52,7 @@ class ProductOut(ProductBase):
     id: int
     last_updated: Optional[datetime.datetime] = None
     supplier: Optional[SupplierOut] = None
+    user_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -67,6 +69,7 @@ class ProductCategoryCreate(ProductCategoryBase):
 
 class ProductCategoryOut(ProductCategoryBase):
     id: int
+    user_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -110,6 +113,15 @@ class UserOut(UserBase):
 class UserLogin(BaseModel):
     email: str
     password: str
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class TokenData(BaseModel):
+    sub: Optional[str] = None
 
 
  

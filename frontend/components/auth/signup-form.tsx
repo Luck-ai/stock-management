@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
+import { apiFetch } from '@/lib/api'
 
 export function SignupForm() {
   const [formData, setFormData] = useState({
@@ -51,9 +52,8 @@ export function SignupForm() {
 
     // Call backend create user endpoint
     try {
-      const res = await fetch("http://localhost:8000/users/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const res = await apiFetch('/users/', {
+        method: 'POST',
         body: JSON.stringify({ full_name: formData.name, email: formData.email, password: formData.password }),
       })
 
@@ -63,9 +63,27 @@ export function SignupForm() {
         return
       }
 
-      const user = await res.json()
+      const created = await res.json()
+      // Auto-login to obtain JWT token
+      try {
+        const loginRes = await apiFetch('/users/login', {
+          method: 'POST',
+          body: JSON.stringify({ email: formData.email, password: formData.password }),
+        })
+        if (loginRes.ok) {
+          const loginData = await loginRes.json()
+          if (loginData && loginData.access_token) {
+            localStorage.setItem('access_token', loginData.access_token)
+            localStorage.setItem('token_type', loginData.token_type || 'bearer')
+          }
+        }
+      } catch (e) {
+        // ignore login error and continue
+        console.warn('Auto-login failed', e)
+      }
+
       localStorage.setItem("isAuthenticated", "true")
-      localStorage.setItem("userEmail", user.email || formData.email)
+      localStorage.setItem("userEmail", created.email || formData.email)
       router.push("/dashboard")
     } catch (err) {
       setError("Account creation failed. Please check your connection and try again.")
