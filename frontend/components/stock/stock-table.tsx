@@ -78,8 +78,14 @@ export function StockTable({ products, onEdit, onDelete }: StockTableProps) {
 
   useEffect(() => {
     let mounted = true
-    // If parent supplied products, don't fetch
-    if (products && products.length) return
+    // If parent supplied products (even an empty array), don't fetch — parent is authoritative.
+    if (products !== undefined) {
+      // Ensure we are not left in a loading state if a previous fetch was in-flight.
+      setFetchedProducts(null)
+      setLoading(false)
+      setError(null)
+      return
+    }
     ;(async () => {
       setLoading(true)
       setError(null)

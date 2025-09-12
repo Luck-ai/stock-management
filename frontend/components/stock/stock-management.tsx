@@ -30,7 +30,7 @@ export interface Product {
 }
 
 export function StockManagement() {
-  const [products, setProducts] = useState<Product[]>([])
+  const [products, setProducts] = useState<Product[] | undefined>(undefined)
   const [categories, setCategories] = useState<string[]>([])
   const [suppliers, setSuppliers] = useState<string[]>([])
   const [searchTerm, setSearchTerm] = useState("")
@@ -40,120 +40,118 @@ export function StockManagement() {
   const [editingProduct, setEditingProduct] = useState<Product | null>(null)
 
   // Fetch suppliers and categories from backend on mount
-  useEffect(() => {
-    let mounted = true
+  // Extracted data loader so we can call it after edits to refresh the table
+  async function loadData() {
+    try {
+      const [prodsRes, catsRes, supsRes] = await Promise.all([
+        apiFetch('/products/'),
+        apiFetch('/categories/'),
+        apiFetch('/suppliers/'),
+      ])
+      // Parse categories and suppliers first so we can resolve names when products only include ids
+      const catsData = catsRes.ok ? await catsRes.json().catch(() => []) : []
+      const supsData = supsRes.ok ? await supsRes.json().catch(() => []) : []
 
-    ;(async () => {
-      try {
-        const [prodsRes, catsRes, supsRes] = await Promise.all([
-          apiFetch('/products/'),
-          apiFetch('/categories/'),
-          apiFetch('/suppliers/'),
-        ])
-        // Parse categories and suppliers first so we can resolve names when products only include ids
-        const catsData = catsRes.ok ? await catsRes.json().catch(() => []) : []
-        const supsData = supsRes.ok ? await supsRes.json().catch(() => []) : []
-
-        // Build lookup maps
-        const catById: Record<string, string> = {}
-        if (Array.isArray(catsData)) {
-          for (const c of catsData) {
-            if (c && typeof c === 'object' && (c.id ?? c.name)) {
-              const id = String(c.id ?? c.name)
-              const name = c.name ?? String(c)
-              catById[id] = name
-            }
+      // Build lookup maps
+      const catById: Record<string, string> = {}
+      if (Array.isArray(catsData)) {
+        for (const c of catsData) {
+          if (c && typeof c === 'object' && (c.id ?? c.name)) {
+            const id = String(c.id ?? c.name)
+            const name = c.name ?? String(c)
+            catById[id] = name
           }
         }
-
-        const supById: Record<string, string> = {}
-        if (Array.isArray(supsData)) {
-          for (const s of supsData) {
-            if (s && typeof s === 'object' && (s.id ?? s.name)) {
-              const id = String(s.id ?? s.name)
-              const name = s.name ?? String(s)
-              supById[id] = name
-            }
-          }
-        }
-
-        if (prodsRes.ok) {
-          const prodsData = await prodsRes.json()
-          const mapped = Array.isArray(prodsData)
-            ? prodsData.map((p: any) => {
-                // Resolve category name from nested object, id, or category_id using lookup map
-                const rawCategory = p.category ?? p.category_id ?? null
-                let categoryName = ''
-                if (rawCategory) {
-                  if (typeof rawCategory === 'object') {
-                    categoryName = rawCategory.name ?? String(rawCategory)
-                  } else {
-                    // rawCategory may be id or string name
-                    categoryName = String(rawCategory)
-                    // if it's an id and exists in catById, prefer the mapped name
-                    if (catById[String(rawCategory)]) categoryName = catById[String(rawCategory)]
-                  }
-                }
-                // Resolve supplier similarly
-                const rawSupplier = p.supplier ?? p.supplier_id ?? null
-                let supplierName = ''
-                if (rawSupplier) {
-                  if (typeof rawSupplier === 'object') {
-                    supplierName = rawSupplier.name ?? String(rawSupplier)
-                  } else {
-                    supplierName = String(rawSupplier)
-                    if (supById[String(rawSupplier)]) supplierName = supById[String(rawSupplier)]
-                  }
-                }
-
-                return ({
-                  id: String(p.id ?? ""),
-                  name: p.name ?? "",
-                  sku: p.sku ?? "",
-                  category: categoryName ?? "",
-                  description: p.description ?? "",
-                  quantity: Number(p.quantity ?? 0),
-                  price: Number(p.price ?? 0),
-                  lowStockThreshold: Number(p.low_stock_threshold ?? p.lowStockThreshold ?? 0),
-                  // include optional server-provided fields so children receive them
-                  statusLabel: p.status ?? p.quantity_warning_label ?? undefined,
-                  statusVariant: p.quantity_warning_variant ?? undefined,
-                  isLowStockFlag: typeof p.is_low_stock === 'boolean' ? p.is_low_stock : undefined,
-                  supplier: supplierName ?? "",
-                  lastUpdated: p.last_updated ?? p.lastUpdated ?? "",
-                })
-              })
-            : []
-            if (mapped.length) setProducts(mapped)
-          }
-
-        // Use the already-parsed catsData and supsData to populate names lists
-        const categoryNames = Array.isArray(catsData) ? catsData.map((c: any) => (typeof c === "string" ? c : c.name ?? String(c))) : []
-        if (categoryNames.length) setCategories(categoryNames)
-
-        const supplierNames = Array.isArray(supsData) ? supsData.map((s: any) => (typeof s === "string" ? s : s.name ?? String(s))) : []
-        if (supplierNames.length) setSuppliers(supplierNames)
-      } catch (err) {
-        console.error("Error fetching products, categories or suppliers", err)
       }
-    })()
 
-    return () => {
-      mounted = false
+      const supById: Record<string, string> = {}
+      if (Array.isArray(supsData)) {
+        for (const s of supsData) {
+          if (s && typeof s === 'object' && (s.id ?? s.name)) {
+            const id = String(s.id ?? s.name)
+            const name = s.name ?? String(s)
+            supById[id] = name
+          }
+        }
+      }
+
+      if (prodsRes.ok) {
+        const prodsData = await prodsRes.json()
+        const mapped = Array.isArray(prodsData)
+          ? prodsData.map((p: any) => {
+              // Resolve category name from nested object, id, or category_id using lookup map
+              const rawCategory = p.category ?? p.category_id ?? null
+              let categoryName = ''
+              if (rawCategory) {
+                if (typeof rawCategory === 'object') {
+                  categoryName = rawCategory.name ?? String(rawCategory)
+                } else {
+                  // rawCategory may be id or string name
+                  categoryName = String(rawCategory)
+                  // if it's an id and exists in catById, prefer the mapped name
+                  if (catById[String(rawCategory)]) categoryName = catById[String(rawCategory)]
+                }
+              }
+              // Resolve supplier similarly
+              const rawSupplier = p.supplier ?? p.supplier_id ?? null
+              let supplierName = ''
+              if (rawSupplier) {
+                if (typeof rawSupplier === 'object') {
+                  supplierName = rawSupplier.name ?? String(rawSupplier)
+                } else {
+                  supplierName = String(rawSupplier)
+                  if (supById[String(rawSupplier)]) supplierName = supById[String(rawSupplier)]
+                }
+              }
+
+              return ({
+                id: String(p.id ?? ""),
+                name: p.name ?? "",
+                sku: p.sku ?? "",
+                category: categoryName ?? "",
+                description: p.description ?? "",
+                quantity: Number(p.quantity ?? 0),
+                price: Number(p.price ?? 0),
+                lowStockThreshold: Number(p.low_stock_threshold ?? p.lowStockThreshold ?? 0),
+                // include optional server-provided fields so children receive them
+                statusLabel: p.status ?? p.quantity_warning_label ?? undefined,
+                statusVariant: p.quantity_warning_variant ?? undefined,
+                isLowStockFlag: typeof p.is_low_stock === 'boolean' ? p.is_low_stock : undefined,
+                supplier: supplierName ?? "",
+                lastUpdated: p.last_updated ?? p.lastUpdated ?? "",
+              })
+            })
+          : []
+      // always set products to the mapped array (may be empty) so child knows parent loaded
+      setProducts(mapped)
+      }
+
+      // Use the already-parsed catsData and supsData to populate names lists
+      const categoryNames = Array.isArray(catsData) ? catsData.map((c: any) => (typeof c === "string" ? c : c.name ?? String(c))) : []
+      if (categoryNames.length) setCategories(categoryNames)
+
+      const supplierNames = Array.isArray(supsData) ? supsData.map((s: any) => (typeof s === "string" ? s : s.name ?? String(s))) : []
+      if (supplierNames.length) setSuppliers(supplierNames)
+    } catch (err) {
+      console.error("Error fetching products, categories or suppliers", err)
     }
+  }
+
+  useEffect(() => {
+    loadData()
   }, [])
 
-  const filteredProducts = products.filter(
+  const filteredProducts = (products ?? []).filter(
     (product) =>
       product.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       product.sku.toLowerCase().includes(searchTerm.toLowerCase()) ||
       product.category.toLowerCase().includes(searchTerm.toLowerCase()),
   )
 
-  const lowStockCount = products.filter((product) => product.quantity <= product.lowStockThreshold).length
+  const lowStockCount = (products ?? []).filter((product) => product.quantity <= product.lowStockThreshold).length
 
-  const totalProducts = products.length
-  const totalValue = products.reduce((sum, product) => sum + product.quantity * product.price, 0)
+  const totalProducts = (products ?? []).length
+  const totalValue = (products ?? []).reduce((sum, product) => sum + product.quantity * product.price, 0)
 
   const handleAddProduct = async (newProduct: Omit<Product, "id" | "lastUpdated">) => {
     // Immediately add the product to local state so UI updates quickly.
@@ -165,7 +163,7 @@ export function StockManagement() {
       id: tempId,
       lastUpdated: new Date().toISOString().split("T")[0],
     }
-    setProducts((prev) => [...prev, product])
+  setProducts((prev) => ([...(prev ?? []), product]))
 
     // If category is numeric (an id) or empty, try to resolve the display name from the server
     const originalCategory = String(newProduct.category ?? "").trim()
@@ -179,7 +177,7 @@ export function StockManagement() {
             const found = data.find((c: any) => String(c.id) === originalCategory || String(c.name) === originalCategory)
             const resolved = found ? (found.name ?? String(found)) : originalCategory
             // Patch the product in state with the resolved name (if any)
-            setProducts((prev) => prev.map((p) => (p.id === tempId ? { ...p, category: resolved || p.category } : p)))
+            setProducts((prev) => (prev ? prev.map((p) => (p.id === tempId ? { ...p, category: resolved || p.category } : p)) : [product]))
           }
         }
       } catch (err) {
@@ -230,12 +228,10 @@ export function StockManagement() {
   }
 
   const handleEditProduct = (updatedProduct: Product) => {
-    setProducts(
-      products.map((p) =>
-        p.id === updatedProduct.id ? { ...updatedProduct, lastUpdated: new Date().toISOString().split("T")[0] } : p,
-      ),
-    )
+    setProducts((prev) => (prev ? prev.map((p) => (p.id === updatedProduct.id ? { ...updatedProduct, lastUpdated: new Date().toISOString().split("T")[0] } : p)) : [updatedProduct]))
     setEditingProduct(null)
+    // Refresh authoritative data from backend after an edit
+    void loadData()
   }
 
   const handleDeleteProduct = (id: string) => {
@@ -260,7 +256,7 @@ export function StockManagement() {
         return
       }
       // Remove from local state after successful deletion
-      setProducts((prev) => prev.filter((p) => p.id !== id))
+  setProducts((prev) => (prev ? prev.filter((p) => p.id !== id) : []))
       setConfirmOpen(false)
     } catch (err) {
       console.error('Error deleting product', err)
@@ -381,7 +377,7 @@ export function StockManagement() {
             </div>
           </div>
 
-          <StockTable products={filteredProducts} onEdit={setEditingProduct} onDelete={handleDeleteProduct} />
+          <StockTable products={products === undefined ? undefined : filteredProducts} onEdit={setEditingProduct} onDelete={handleDeleteProduct} />
         </CardContent>
       </Card>
 

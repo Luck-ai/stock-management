@@ -4,6 +4,7 @@ import type React from "react"
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
+import { apiFetch } from '@/lib/api'
 import {
   Dialog,
   DialogContent,
@@ -24,8 +25,6 @@ interface EditProductDialogProps {
   onEdit: (product: Product) => void
 }
 
-const categories = ["Electronics", "Accessories", "Clothing", "Books", "Home & Garden"]
-const suppliers = ["TechCorp", "AudioMax", "CableCo", "DeskPro", "GlobalSupply"]
 
 export function EditProductDialog({ open, onOpenChange, product, onEdit }: EditProductDialogProps) {
   const [formData, setFormData] = useState({
@@ -37,6 +36,9 @@ export function EditProductDialog({ open, onOpenChange, product, onEdit }: EditP
     lowStockThreshold: "",
     supplier: "",
   })
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
+  const [suppliers, setSuppliers] = useState<{ id: number; name: string }[]>([])
 
   useEffect(() => {
     if (product) {
@@ -52,19 +54,148 @@ export function EditProductDialog({ open, onOpenChange, product, onEdit }: EditP
     }
   }, [product])
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Fetch categories and suppliers like AddProductDialog so we can present proper options and resolve ids
+  useEffect(() => {
+    let mounted = true
+
+    ;(async () => {
+      try {
+        const [catsRes, supsRes] = await Promise.all([apiFetch('/categories/'), apiFetch('/suppliers/')])
+        const catsData = catsRes.ok ? await catsRes.json().catch(() => []) : []
+        const supsData = supsRes.ok ? await supsRes.json().catch(() => []) : []
+
+        if (!mounted) return
+
+        const catList = Array.isArray(catsData)
+          ? catsData.map((c: any) => (typeof c === 'string' ? { id: 0, name: c } : { id: c.id ?? 0, name: c.name ?? String(c) }))
+          : []
+        const supList = Array.isArray(supsData)
+          ? supsData.map((s: any) => (typeof s === 'string' ? { id: 0, name: s } : { id: s.id ?? 0, name: s.name ?? String(s) }))
+          : []
+
+        setCategories(catList)
+        setSuppliers(supList)
+      } catch (err) {
+        console.error('Error fetching categories or suppliers', err)
+      }
+    })()
+
+    return () => {
+      mounted = false
+    }
+  }, [])
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    onEdit({
-      ...product,
+    if (!product || !product.id) return
+
+    setIsSubmitting(true)
+
+    const payload: any = {
       name: formData.name,
-      sku: formData.sku,
-      category: formData.category,
-      quantity: Number.parseInt(formData.quantity),
-      price: Number.parseFloat(formData.price),
-      lowStockThreshold: Number.parseInt(formData.lowStockThreshold),
-      supplier: formData.supplier,
-    })
+      sku: formData.sku || undefined,
+      category_id: undefined,
+      description: undefined,
+      price: Number.parseFloat(formData.price) || 0,
+      quantity: Number.parseInt(formData.quantity) || 0,
+      low_stock_threshold: Number.parseInt(formData.lowStockThreshold) || 0,
+      supplier_id: undefined,
+    }
+
+    // try to parse supplier id if provided as an id string
+    const asSupplierId = Number(formData.supplier)
+    if (Number.isInteger(asSupplierId) && asSupplierId > 0) payload.supplier_id = asSupplierId
+
+    // if supplier wasn't numeric, try to resolve from fetched suppliers list by id or name
+    if (!payload.supplier_id && formData.supplier) {
+      // check local list first
+      const foundLocal = suppliers.find((s) => String(s.id) === String(formData.supplier) || s.name === formData.supplier)
+      if (foundLocal && foundLocal.id && foundLocal.id > 0) {
+        payload.supplier_id = foundLocal.id
+      } else {
+        // fallback: query server for suppliers and try to resolve by name
+        try {
+          const res = await apiFetch('/suppliers/')
+          if (res.ok) {
+            const data = await res.json()
+            if (Array.isArray(data)) {
+              const found = data.find((s: any) => (s.name ?? String(s)).toString() === formData.supplier)
+              if (found && found.id) payload.supplier_id = Number(found.id)
+            }
+          }
+        } catch (e) {
+          // ignore resolution errors
+        }
+      }
+    }
+
+    const asCategoryId = Number(formData.category)
+    if (Number.isInteger(asCategoryId) && asCategoryId > 0) payload.category_id = asCategoryId
+
+    // if category wasn't numeric, try to resolve from fetched categories list by id or name
+    if (!payload.category_id && formData.category) {
+      const foundLocalCat = categories.find((c) => String(c.id) === String(formData.category) || c.name === formData.category)
+      if (foundLocalCat && foundLocalCat.id && foundLocalCat.id > 0) {
+        payload.category_id = foundLocalCat.id
+      } else {
+        try {
+          const res = await apiFetch('/categories/')
+          if (res.ok) {
+            const data = await res.json()
+            if (Array.isArray(data)) {
+              const found = data.find((c: any) => (c.name ?? String(c)).toString() === formData.category)
+              if (found && found.id) payload.category_id = Number(found.id)
+            }
+          }
+        } catch (e) {
+          // ignore
+        }
+      }
+    }
+
+    try {
+      const res = await apiFetch(`/products/${product.id}`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+      })
+
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}))
+        console.error("Failed to update product", errBody)
+        alert(`Failed to save changes: ${res.status}`)
+        setIsSubmitting(false)
+        return
+      }
+
+      const updated = await res.json()
+
+      // Resolve supplier & category display names similar to add flow
+      const supplierName = (updated.supplier && (updated.supplier.name ?? String(updated.supplier))) || formData.supplier || product.supplier || ""
+      const categoryName = (updated.category && (updated.category.name ?? String(updated.category))) || formData.category || product.category || ""
+
+      const updatedProduct: Product = {
+        ...product,
+        id: updated.id ?? product.id,
+        name: updated.name ?? formData.name,
+        sku: updated.sku ?? formData.sku ?? "",
+        category: categoryName,
+        description: updated.description ?? product.description ?? "",
+  quantity: (updated.quantity ?? Number.parseInt(formData.quantity)) || 0,
+  price: (updated.price ?? Number.parseFloat(formData.price)) || 0,
+  lowStockThreshold: (updated.low_stock_threshold ?? Number.parseInt(formData.lowStockThreshold)) || 0,
+        supplier: supplierName,
+        lastUpdated: (updated.last_updated as string) ?? (updated.updated_at as string) ?? product.lastUpdated,
+      }
+
+      onEdit(updatedProduct)
+      setIsSubmitting(false)
+      onOpenChange(false)
+    } catch (err) {
+      console.error("Error updating product", err)
+      alert("An error occurred saving the product. Please try again.")
+      setIsSubmitting(false)
+    }
   }
 
   const handleChange = (field: string, value: string) => {
@@ -113,11 +244,17 @@ export function EditProductDialog({ open, onOpenChange, product, onEdit }: EditP
                   <SelectValue placeholder="Select category" />
                 </SelectTrigger>
                 <SelectContent>
-                  {categories.map((category) => (
-                    <SelectItem key={category} value={category}>
-                      {category}
-                    </SelectItem>
-                  ))}
+                  {categories.map((c, idx) => {
+                    const useId = Boolean(c.id && c.id > 0)
+                    const baseKey = useId ? `cat-${c.id}` : `cat-${c.name}`
+                    const key = `${baseKey}-${idx}`
+                    const value = useId ? String(c.id) : c.name
+                    return (
+                      <SelectItem key={key} value={value}>
+                        {c.name}
+                      </SelectItem>
+                    )
+                  })}
                 </SelectContent>
               </Select>
             </div>
@@ -170,17 +307,23 @@ export function EditProductDialog({ open, onOpenChange, product, onEdit }: EditP
                   <SelectValue placeholder="Select supplier" />
                 </SelectTrigger>
                 <SelectContent>
-                  {suppliers.map((supplier) => (
-                    <SelectItem key={supplier} value={supplier}>
-                      {supplier}
-                    </SelectItem>
-                  ))}
+                  {suppliers.map((s, idx) => {
+                    const useId = Boolean(s.id && s.id > 0)
+                    const baseKey = useId ? `sup-${s.id}` : `sup-${s.name}`
+                    const key = `${baseKey}-${idx}`
+                    const value = useId ? String(s.id) : s.name
+                    return (
+                      <SelectItem key={key} value={value}>
+                        {s.name}
+                      </SelectItem>
+                    )
+                  })}
                 </SelectContent>
               </Select>
             </div>
           </div>
           <DialogFooter>
-            <Button type="submit">Save Changes</Button>
+            <Button type="submit" disabled={isSubmitting}>{isSubmitting ? 'Saving...' : 'Save Changes'}</Button>
           </DialogFooter>
         </form>
       </DialogContent>
