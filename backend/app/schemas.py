@@ -31,6 +31,7 @@ class ProductBase(BaseModel):
     quantity: int = 0
     low_stock_threshold: int = 0
     supplier_id: Optional[int] = None
+    user_id: Optional[int] = None
 
 
 class ProductCreate(ProductBase):
@@ -38,14 +39,14 @@ class ProductCreate(ProductBase):
 
 
 class ProductUpdate(BaseModel):
-    name: Optional[str]
-    sku: Optional[str]
-    category_id: Optional[int]
-    description: Optional[str]
-    price: Optional[int]
-    quantity: Optional[int]
-    low_stock_threshold: Optional[int]
-    supplier_id: Optional[int]
+    name: Optional[str] = None
+    sku: Optional[str] = None
+    category_id: Optional[int] = None
+    description: Optional[str] = None
+    price: Optional[int] = None
+    quantity: Optional[int] = None
+    low_stock_threshold: Optional[int] = None
+    supplier_id: Optional[int] = None
 
 
 class ProductOut(ProductBase):

@@ -10,7 +10,7 @@ import "./globals.css"
 
 
 export const metadata: Metadata = {
-  title: "Stock Manager Pro",
+  title: "OptiStock",
   description: "Professional inventory management system",
   generator: "OptiStock",
 }

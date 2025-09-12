@@ -48,9 +48,11 @@ async def create_product(db: AsyncSession, product: schemas.ProductCreate) -> mo
         # rollback and raise a simple error that the router can translate
         await db.rollback()
         msg = str(e.orig) if getattr(e, 'orig', None) else str(e)
+        # surface SKU-specific messages as before
         if 'sku' in msg.lower():
             raise ValueError("SKU already exists")
-        raise ValueError("Database integrity error")
+        # include original DB message to aid debugging (safe in dev)
+        raise ValueError(f"Database integrity error: {msg}")
     # reload with selectinload to ensure relationships accessible without IO
     stmt = select(models.Product).where(models.Product.id == db_product.id).options(
         selectinload(models.Product.supplier),
@@ -74,6 +76,21 @@ async def update_product(db: AsyncSession, product_id: int, updates: schemas.Pro
     if not db_product:
         return None
     updated_items = updates.model_dump(exclude_unset=True)
+    # validate FK references if provided
+    if 'supplier_id' in updated_items and updated_items.get('supplier_id') is not None:
+        stmt = select(models.Supplier).where(models.Supplier.id == updated_items.get('supplier_id'))
+        if user_id is not None:
+            stmt = stmt.where(models.Supplier.user_id == user_id)
+        result = await db.execute(stmt)
+        if not result.scalars().first():
+            raise ValueError('Invalid supplier_id')
+    if 'category_id' in updated_items and updated_items.get('category_id') is not None:
+        stmt = select(models.ProductCategory).where(models.ProductCategory.id == updated_items.get('category_id'))
+        if user_id is not None:
+            stmt = stmt.where(models.ProductCategory.user_id == user_id)
+        result = await db.execute(stmt)
+        if not result.scalars().first():
+            raise ValueError('Invalid category_id')
     # If SKU is being changed/added, ensure uniqueness across other products
     if "sku" in updated_items:
         new_sku = updated_items.get("sku")
@@ -93,7 +110,7 @@ async def update_product(db: AsyncSession, product_id: int, updates: schemas.Pro
         msg = str(e.orig) if getattr(e, 'orig', None) else str(e)
         if 'sku' in msg.lower():
             raise ValueError("SKU already exists")
-        raise ValueError("Database integrity error")
+        raise ValueError(f"Database integrity error: {msg}")
     stmt = select(models.Product).where(models.Product.id == db_product.id).options(
         selectinload(models.Product.supplier),
         selectinload(models.Product.category),
