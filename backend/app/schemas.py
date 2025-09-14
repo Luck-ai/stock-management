@@ -16,6 +16,7 @@ class SupplierCreate(SupplierBase):
 
 class SupplierOut(SupplierBase):
     id: int
+    user_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -30,6 +31,7 @@ class ProductBase(BaseModel):
     quantity: int = 0
     low_stock_threshold: int = 0
     supplier_id: Optional[int] = None
+    user_id: Optional[int] = None
 
 
 class ProductCreate(ProductBase):
@@ -37,20 +39,21 @@ class ProductCreate(ProductBase):
 
 
 class ProductUpdate(BaseModel):
-    name: Optional[str]
-    sku: Optional[str]
-    category_id: Optional[int]
-    description: Optional[str]
-    price: Optional[int]
-    quantity: Optional[int]
-    low_stock_threshold: Optional[int]
-    supplier_id: Optional[int]
+    name: Optional[str] = None
+    sku: Optional[str] = None
+    category_id: Optional[int] = None
+    description: Optional[str] = None
+    price: Optional[int] = None
+    quantity: Optional[int] = None
+    low_stock_threshold: Optional[int] = None
+    supplier_id: Optional[int] = None
 
 
 class ProductOut(ProductBase):
     id: int
     last_updated: Optional[datetime.datetime] = None
     supplier: Optional[SupplierOut] = None
+    user_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -67,6 +70,7 @@ class ProductCategoryCreate(ProductCategoryBase):
 
 class ProductCategoryOut(ProductCategoryBase):
     id: int
+    user_id: Optional[int] = None
 
     class Config:
         from_attributes = True
@@ -102,6 +106,14 @@ class UserCreate(UserBase):
 
 class UserOut(UserBase):
     id: int
+    is_verified: bool = False
+
+    class Config:
+        from_attributes = True
+
+
+class UserOut(UserBase):
+    id: int
 
     class Config:
         from_attributes = True
@@ -110,6 +122,24 @@ class UserOut(UserBase):
 class UserLogin(BaseModel):
     email: str
     password: str
+
+
+class VerifyRequest(BaseModel):
+    email: str
+
+
+class VerifyResponse(BaseModel):
+    status: str
+    detail: str
+
+
+class Token(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+
+
+class TokenData(BaseModel):
+    sub: Optional[str] = None
 
 
  

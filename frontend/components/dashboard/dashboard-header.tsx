@@ -13,10 +13,24 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Bell, Settings, LogOut, Search } from "lucide-react"
 import { useRouter } from "next/navigation"
+import { useEffect, useState } from "react"
 import { Input } from "@/components/ui/input"
 
 export function DashboardHeader() {
   const router = useRouter()
+
+  const [userEmail, setUserEmail] = useState<string | null>(null)
+
+  useEffect(() => {
+    // read localStorage only on the client after mount
+    try {
+      const email = localStorage.getItem("userEmail")
+      setUserEmail(email)
+    } catch (e) {
+      // ignore (e.g., in some privacy modes)
+      setUserEmail(null)
+    }
+  }, [])
 
   const handleLogout = () => {
     localStorage.removeItem("isAuthenticated")
@@ -30,10 +44,10 @@ export function DashboardHeader() {
         <div className="flex items-center space-x-6">
           <div className="flex items-center space-x-2">
             <div className="h-8 w-8 rounded-lg bg-primary flex items-center justify-center">
-              <span className="text-primary-foreground font-bold text-sm">SM</span>
+              <span className="text-primary-foreground font-bold text-sm">OS</span>
             </div>
             <h1 className="text-xl font-bold bg-gradient-to-r from-primary to-accent bg-clip-text text-transparent">
-              Stock Manager Pro
+              OptiStock
             </h1>
           </div>
 
@@ -61,19 +75,17 @@ export function DashboardHeader() {
               <Button variant="ghost" className="relative h-9 w-9 rounded-full">
                 <Avatar className="h-9 w-9">
                   <AvatarFallback className="bg-primary text-primary-foreground">
-                    {typeof window !== "undefined"
-                      ? (localStorage.getItem("userEmail") || "U").charAt(0).toUpperCase()
-                      : "U"}
+                    {userEmail ? userEmail.charAt(0).toUpperCase() : "U"}
                   </AvatarFallback>
                 </Avatar>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent className="w-56" align="end" forceMount>
-              <DropdownMenuLabel className="font-normal">
+                  <DropdownMenuLabel className="font-normal">
                 <div className="flex flex-col space-y-1">
                   <p className="text-sm font-medium leading-none">Stock Manager</p>
                   <p className="text-xs leading-none text-muted-foreground">
-                    {typeof window !== "undefined" ? localStorage.getItem("userEmail") : "user@example.com"}
+                    {userEmail ?? "user@example.com"}
                   </p>
                 </div>
               </DropdownMenuLabel>

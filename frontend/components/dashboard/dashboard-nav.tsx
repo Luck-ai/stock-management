@@ -22,11 +22,6 @@ const navItems = [
     icon: BarChart3,
   },
   {
-    title: "Products",
-    href: "/dashboard/products",
-    icon: FileText,
-  },
-  {
     title: "Restock",
     href: "/dashboard/restock",
     icon: RefreshCw,

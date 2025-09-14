@@ -5,6 +5,6 @@ COPY package.json package-lock.json ./
 RUN npm install
 COPY . .
 RUN npx next telemetry disable
-RUN npm run dev
+RUN npm run dev:electron
 
-CMD ["npm", "run", "start"]
+CMD ["npm", "run", "dev:electron"]

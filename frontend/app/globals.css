@@ -5,19 +5,21 @@
 
 :root {
   /* Updated color tokens for professional stock management theme */
-  --background: oklch(1 0 0);
+  --background: oklch(0.9669 0.016 282.28);
+  --auth-background: #34336a;
+  --auth-foreground: oklch(0.25 0 0);
   --foreground: oklch(0.25 0 0);
-  --card: oklch(0.98 0 0);
+  --card: #e8e6f9;
   --card-foreground: oklch(0.3 0 0);
   --popover: oklch(1 0 0);
   --popover-foreground: oklch(0.25 0 0);
-  --primary: oklch(0.45 0.15 160);
+  --primary: #514982;
   --primary-foreground: oklch(1 0 0);
   --secondary: oklch(0.96 0 0);
   --secondary-foreground: oklch(0.3 0 0);
   --muted: oklch(0.97 0 0);
   --muted-foreground: oklch(0.45 0 0);
-  --accent: oklch(0.55 0.15 160);
+  --accent: #514982;
   --accent-foreground: oklch(1 0 0);
   --destructive: oklch(0.55 0.22 25);
   --destructive-foreground: oklch(1 0 0);
@@ -32,9 +34,9 @@
   --radius: 0.5rem;
   --sidebar: oklch(0.97 0 0);
   --sidebar-foreground: oklch(0.25 0 0);
-  --sidebar-primary: oklch(0.45 0.15 160);
+  --sidebar-primary: #514982;
   --sidebar-primary-foreground: oklch(1 0 0);
-  --sidebar-accent: oklch(0.55 0.15 160);
+  --sidebar-accent: #514982;
   --sidebar-accent-foreground: oklch(1 0 0);
   --sidebar-border: oklch(0.92 0 0);
   --sidebar-ring: oklch(0.45 0.15 160 / 0.3);
@@ -42,6 +44,8 @@
 
 .dark {
   /* Updated dark mode tokens for professional appearance */
+  --auth-background: oklch(0.1 0 0);
+  --auth-foreground: oklch(0.95 0 0);
   --background: oklch(0.08 0 0);
   --foreground: oklch(0.95 0 0);
   --card: oklch(0.1 0 0);
@@ -123,5 +127,18 @@
   }
   body {
     @apply bg-background text-foreground;
+  }
+}
+
+@layer utilities {
+  .bg-auth-background { background-color: var(--auth-background) !important; }
+  .text-auth-foreground { color: var(--auth-foreground) !important; }
+  /* Auth hero background: purple gradient with subtle vignette */
+  .auth-hero {
+    background: radial-gradient(1200px 600px at 10% 20%, rgba(81,73,130,0.6), transparent 10%),
+                radial-gradient(1000px 500px at 90% 80%, rgba(81,73,130,0.45), transparent 18%),
+                linear-gradient(180deg, #2b244b 0%, #2e244f 40%, #24163a 100%);
+    background-size: cover;
+    background-position: center;
   }
 }

@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
+import { apiFetch } from '@/lib/api'
 
 export function SignupForm() {
   const [formData, setFormData] = useState({
@@ -51,9 +52,8 @@ export function SignupForm() {
 
     // Call backend create user endpoint
     try {
-      const res = await fetch("http://localhost:8000/users/", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
+      const res = await apiFetch('/users/', {
+        method: 'POST',
         body: JSON.stringify({ full_name: formData.name, email: formData.email, password: formData.password }),
       })
 
@@ -63,10 +63,19 @@ export function SignupForm() {
         return
       }
 
-      const user = await res.json()
-      localStorage.setItem("isAuthenticated", "true")
-      localStorage.setItem("userEmail", user.email || formData.email)
-      router.push("/dashboard")
+      const created = await res.json()
+      try {
+        await apiFetch('/users/send-verification', {
+          method: 'POST',
+          body: JSON.stringify({ email: formData.email }),
+        })
+        localStorage.setItem("userEmail", created.email || formData.email)
+        router.push('/signup/verify-sent')
+        return
+      } catch (e) {
+        // fall back to redirect to dashboard if verification request fails
+        console.warn('Verification request failed', e)
+      }
     } catch (err) {
       setError("Account creation failed. Please check your connection and try again.")
     } finally {

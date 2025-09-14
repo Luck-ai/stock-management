@@ -4,6 +4,7 @@ import type React from "react"
 
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
+import { apiFetch } from '@/lib/api'
 import {
   Dialog,
   DialogContent,
@@ -24,10 +25,6 @@ interface AddProductDialogProps {
   suppliers?: string[]
   categories?: string[]
 }
-
-// initial lists (fallback)
-// const initialCategories = ["Electronics", "Accessories", "Clothing", "Books", "Home & Garden"]
-// const initialSuppliers = ["TechCorp", "AudioMax", "CableCo", "DeskPro", "GlobalSupply"]
 
 export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSuppliers, categories: propCategories }: AddProductDialogProps) {
   const [formData, setFormData] = useState({
@@ -53,7 +50,7 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
     } else {
       ;(async () => {
         try {
-          const res = await fetch("http://localhost:8000/categories/")
+          const res = await apiFetch('/categories/')
           if (!res.ok) throw new Error(`Failed to fetch categories: ${res.status}`)
           const data = await res.json()
           if (!mounted) return
@@ -73,13 +70,12 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
       })()
     }
 
-    // If parent passed suppliers, prefer them (map strings to {id,name})
     if (propSuppliers && propSuppliers.length) {
       setSuppliers(propSuppliers.map((s) => ({ id: 0, name: s })))
     } else {
       ;(async () => {
         try {
-          const res = await fetch("http://localhost:8000/suppliers/")
+          const res = await apiFetch('/suppliers/')
           if (!res.ok) throw new Error(`Failed to fetch suppliers: ${res.status}`)
           const data = await res.json()
           if (!mounted) return
@@ -102,26 +98,65 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    // supplier id (if selected): supplierId may be an id string or a name fallback
     let supplier_id: number | null = null
     if (formData.supplierId) {
-      const asNum = Number.parseInt(formData.supplierId)
-      if (!Number.isNaN(asNum) && asNum > 0) supplier_id = asNum
-      else {
-        // try to find supplier by name in fetched suppliers
-        const found = suppliers.find((s) => s.name === formData.supplierId)
-        if (found && found.id && found.id > 0) supplier_id = found.id
+      const asNum = Number(formData.supplierId)
+      if (Number.isInteger(asNum) && asNum > 0) {
+        supplier_id = asNum
+      } else {
+        const foundByIdString = suppliers.find((s) => String(s.id) === String(formData.supplierId))
+        if (foundByIdString && foundByIdString.id && foundByIdString.id > 0) {
+          supplier_id = foundByIdString.id
+        } else {
+          const foundByName = suppliers.find((s) => s.name === formData.supplierId)
+          if (foundByName && foundByName.id && foundByName.id > 0) supplier_id = foundByName.id
+        }
       }
     }
 
-    // category id mapping
     let category_id: number | null = null
     if (formData.category) {
-      const asNum = Number.parseInt(formData.category)
-      if (!Number.isNaN(asNum) && asNum > 0) category_id = asNum
-      else {
-        const found = categories.find((c) => c.name === formData.category)
-        if (found && found.id && found.id > 0) category_id = found.id
+      const asNum = Number(formData.category)
+      if (Number.isInteger(asNum) && asNum > 0) {
+        category_id = asNum
+      } else {
+        const foundByIdString = categories.find((c) => String(c.id) === String(formData.category))
+        if (foundByIdString && foundByIdString.id && foundByIdString.id > 0) {
+          category_id = foundByIdString.id
+        } else {
+          const foundByName = categories.find((c) => c.name === formData.category)
+          if (foundByName && foundByName.id && foundByName.id > 0) category_id = foundByName.id
+        }
+      }
+    }
+
+    if (!supplier_id && formData.supplierId) {
+      try {
+        const res = await apiFetch('/suppliers/')
+        if (res.ok) {
+          const data = await res.json()
+          if (Array.isArray(data)) {
+            const found = data.find((s: any) => (s.name ?? String(s)).toString() === formData.supplierId)
+            if (found && found.id) supplier_id = Number(found.id)
+          }
+        }
+      } catch (e) {
+        // Could not resolve supplier id by name
+      }
+    }
+
+    if (!category_id && formData.category) {
+      try {
+        const res = await apiFetch('/categories/')
+        if (res.ok) {
+          const data = await res.json()
+          if (Array.isArray(data)) {
+            const found = data.find((c: any) => (c.name ?? String(c)).toString() === formData.category)
+            if (found && found.id) category_id = Number(found.id)
+          }
+        }
+      } catch (e) {
+        // Could not resolve category id by name
       }
     }
 
@@ -137,9 +172,9 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
     }
 
     try {
-      const res = await fetch("http://localhost:8000/products/", {
+      const res = await apiFetch('/products/', {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        // apiFetch will set Content-Type when body is present
         body: JSON.stringify(payload),
       })
 
@@ -153,11 +188,15 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
 
       const created = await res.json()
       // find supplier & category names for local UI shape
+      // Determine supplier & category names for local UI shape.
+      // Prefer the backend's returned nested object or value, then our resolved id lookups,
+      // and finally fall back to the user's original form input (so UI shows what the user selected).
       const supplierName =
-        (created.supplier && created.supplier.name) || (supplier_id ? suppliers.find((s) => s.id === supplier_id)?.name ?? "" : "")
+        (created.supplier && (created.supplier.name ?? String(created.supplier))) ||
+        (supplier_id ? suppliers.find((s) => s.id === supplier_id)?.name ?? "" : formData.supplierId || "")
       const categoryName =
-        (created.category && (created.category.name || created.category)) ||
-        (category_id ? categories.find((c) => c.id === category_id)?.name ?? "" : "")
+        (created.category && (created.category.name ?? String(created.category))) ||
+        (category_id ? categories.find((c) => c.id === category_id)?.name ?? "" : formData.category || "")
 
       // call parent onAdd with the product data in the shape it expects
       onAdd({

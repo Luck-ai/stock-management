@@ -37,10 +37,14 @@ export function LoginForm() {
         return
       }
 
-      const user = await res.json()
-      // Persist minimal auth state for the demo app
+      const data = await res.json()
+      // Persist JWT token + minimal auth state for the demo app
+      if (data && data.access_token) {
+        localStorage.setItem('access_token', data.access_token)
+        localStorage.setItem('token_type', data.token_type || 'bearer')
+      }
       localStorage.setItem("isAuthenticated", "true")
-      localStorage.setItem("userEmail", user.email || email)
+      localStorage.setItem("userEmail", data.email || email)
       router.push("/dashboard")
     } catch (err) {
       setError("Login failed. Please check your connection and try again.")

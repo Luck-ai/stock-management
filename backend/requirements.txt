@@ -7,3 +7,5 @@ psycopg2-binary
 pydantic
 alembic
 python-dotenv
+python-jose[cryptography]
+Jinja2
