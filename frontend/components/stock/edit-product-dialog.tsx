@@ -56,7 +56,7 @@ export function EditProductDialog({ open, onOpenChange, product, onEdit }: EditP
 
   // Fetch categories and suppliers like AddProductDialog so we can present proper options and resolve ids
   useEffect(() => {
-    let mounted = true
+    let active = true
 
     ;(async () => {
       try {
@@ -64,7 +64,7 @@ export function EditProductDialog({ open, onOpenChange, product, onEdit }: EditP
         const catsData = catsRes.ok ? await catsRes.json().catch(() => []) : []
         const supsData = supsRes.ok ? await supsRes.json().catch(() => []) : []
 
-        if (!mounted) return
+  if (!active) return
 
         const catList = Array.isArray(catsData)
           ? catsData.map((c: any) => (typeof c === 'string' ? { id: 0, name: c } : { id: c.id ?? 0, name: c.name ?? String(c) }))
@@ -73,15 +73,15 @@ export function EditProductDialog({ open, onOpenChange, product, onEdit }: EditP
           ? supsData.map((s: any) => (typeof s === 'string' ? { id: 0, name: s } : { id: s.id ?? 0, name: s.name ?? String(s) }))
           : []
 
-        setCategories(catList)
-        setSuppliers(supList)
+  if (active) setCategories(catList)
+  if (active) setSuppliers(supList)
       } catch (err) {
         console.error('Error fetching categories or suppliers', err)
       }
     })()
 
     return () => {
-      mounted = false
+      active = false
     }
   }, [])
 
@@ -204,7 +204,7 @@ export function EditProductDialog({ open, onOpenChange, product, onEdit }: EditP
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px]" style={{ backgroundColor: 'var(--ui-card-bg)' }}>
         <DialogHeader>
           <DialogTitle>Edit Product</DialogTitle>
           <DialogDescription>Update the product information. Changes will be saved immediately.</DialogDescription>

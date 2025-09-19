@@ -57,6 +57,49 @@ class ProductSale(Base):
     quantity = Column(Integer, nullable=False)
     sale_price = Column(Numeric(12, 2), nullable=False)
     sale_date = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # ORM relationships
+    product = relationship('Product', backref='sales')
+    user = relationship('User', backref='product_sales')
+
+
+class StockMovement(Base):
+    __tablename__ = 'stock_movements'
+
+    id = Column(Integer, primary_key=True, index=True)
+    product_id = Column(Integer, ForeignKey('products.id'), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=True, index=True)
+    movement_type = Column(String(50), nullable=False)  # 'sale', 'restock', 'adjustment', 'initial'
+    quantity_change = Column(Integer, nullable=False)  # positive for additions, negative for subtractions
+    quantity_before = Column(Integer, nullable=False)
+    quantity_after = Column(Integer, nullable=False)
+    reference_id = Column(Integer, nullable=True)  # FK to sale_id, purchase_order_id, etc.
+    reference_type = Column(String(50), nullable=True)  # 'sale', 'purchase_order', 'manual_adjustment'
+    notes = Column(Text, nullable=True)
+    transaction_date = Column(DateTime(timezone=True), nullable=True)  # Actual date of the transaction (sale date, etc.)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # ORM relationships
+    product = relationship('Product', backref='stock_movements')
+    user = relationship('User', backref='stock_movements')
+
+
+class PurchaseOrder(Base):
+    __tablename__ = 'purchase_orders'
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'), nullable=False, index=True)
+    supplier_id = Column(Integer, ForeignKey('suppliers.id'), nullable=True, index=True)
+    product_id = Column(Integer, ForeignKey('products.id'), nullable=False, index=True)
+    quantity_ordered = Column(Integer, nullable=False)
+    status = Column(String(50), nullable=False, default='pending')  # pending, completed, cancelled
+    order_date = Column(DateTime(timezone=True), server_default=func.now())
+    notes = Column(Text, nullable=True)
+    
+    # ORM relationships
+    user = relationship('User', backref='purchase_orders')
+    supplier = relationship('Supplier', backref='purchase_orders')
+    product = relationship('Product', backref='purchase_orders')
 
 
 class User(Base):

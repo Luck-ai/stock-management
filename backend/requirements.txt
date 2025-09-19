@@ -9,3 +9,4 @@ alembic
 python-dotenv
 python-jose[cryptography]
 Jinja2
+multipart

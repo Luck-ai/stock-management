@@ -11,7 +11,7 @@ class SupplierBase(BaseModel):
 
 
 class SupplierCreate(SupplierBase):
-    pass
+    user_id: Optional[int] = None
 
 
 class SupplierOut(SupplierBase):
@@ -54,6 +54,8 @@ class ProductOut(ProductBase):
     last_updated: Optional[datetime.datetime] = None
     supplier: Optional[SupplierOut] = None
     user_id: Optional[int] = None
+    # Include nested category for convenience so frontend doesn't need extra lookup
+    category: Optional['ProductCategoryOut'] = None
 
     class Config:
         from_attributes = True
@@ -65,7 +67,7 @@ class ProductCategoryBase(BaseModel):
 
 
 class ProductCategoryCreate(ProductCategoryBase):
-    pass
+    user_id: Optional[int] = None
 
 
 class ProductCategoryOut(ProductCategoryBase):
@@ -75,12 +77,13 @@ class ProductCategoryOut(ProductCategoryBase):
     class Config:
         from_attributes = True
 
+# Forward refs resolution (since ProductOut refers to ProductCategoryOut)
+ProductOut.model_rebuild()
+
 
 class ProductSaleBase(BaseModel):
-    product_id: int
-    user_id: Optional[int] = None
     quantity: int
-    sale_price: float
+    sale_date: Optional[datetime.datetime] = None
 
 
 class ProductSaleCreate(ProductSaleBase):
@@ -89,7 +92,34 @@ class ProductSaleCreate(ProductSaleBase):
 
 class ProductSaleOut(ProductSaleBase):
     id: int
-    sale_date: Optional[datetime.datetime] = None
+    product_id: int
+    user_id: Optional[int] = None
+    sale_price: float  # This will be populated from the product's current price
+
+    class Config:
+        from_attributes = True
+
+
+class StockMovementBase(BaseModel):
+    product_id: int
+    movement_type: str  # 'sale', 'restock', 'adjustment', 'initial'
+    quantity_change: int  # positive for additions, negative for subtractions
+    quantity_before: int
+    quantity_after: int
+    reference_id: Optional[int] = None
+    reference_type: Optional[str] = None
+    notes: Optional[str] = None
+    transaction_date: Optional[datetime.datetime] = None
+
+
+class StockMovementCreate(StockMovementBase):
+    pass
+
+
+class StockMovementOut(StockMovementBase):
+    id: int
+    user_id: Optional[int] = None
+    created_at: Optional[datetime.datetime] = None
 
     class Config:
         from_attributes = True
@@ -142,6 +172,40 @@ class TokenData(BaseModel):
     sub: Optional[str] = None
 
 
- 
- 
- 
+# Purchase Order Schemas
+class PurchaseOrderBase(BaseModel):
+    supplier_id: Optional[int] = None
+    product_id: int
+    quantity_ordered: int
+    status: str = "pending"
+    notes: Optional[str] = None
+
+
+class PurchaseOrderCreate(PurchaseOrderBase):
+    user_id: Optional[int] = None
+
+
+class PurchaseOrderUpdate(BaseModel):
+    supplier_id: Optional[int] = None
+    quantity_ordered: Optional[int] = None
+    status: Optional[str] = None
+    notes: Optional[str] = None
+
+
+class PurchaseOrderOut(PurchaseOrderBase):
+    id: int
+    user_id: int
+    order_date: Optional[datetime.datetime] = None
+    supplier: Optional[SupplierOut] = None
+    product: Optional[ProductOut] = None
+
+    class Config:
+        from_attributes = True
+
+
+# Restock Summary
+class RestockSummary(BaseModel):
+    pending_orders: int
+    low_stock_items: int
+    out_of_stock_items: int
+    total_pending_value: float

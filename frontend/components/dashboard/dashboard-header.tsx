@@ -50,14 +50,6 @@ export function DashboardHeader() {
               OptiStock
             </h1>
           </div>
-
-          <div className="hidden md:flex relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder="Search products, orders..."
-              className="pl-10 w-80 bg-muted/50 border-0 focus-visible:ring-1"
-            />
-          </div>
         </div>
 
         <div className="flex items-center space-x-2">

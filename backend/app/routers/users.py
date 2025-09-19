@@ -41,8 +41,6 @@ async def list_users(db: AsyncSession = Depends(get_db)):
         users = result.scalars().all()
         return users
 
-
-
 @router.post('/login', response_model=schemas.Token)
 async def login(data: schemas.UserLogin, db: AsyncSession = Depends(get_db)):
     hashed = _hash_password(data.password)

@@ -5,6 +5,8 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { apiFetch } from '@/lib/api'
+import { Upload } from "lucide-react"
+import { useAppToast } from '@/lib/use-toast'
 import {
   Dialog,
   DialogContent,
@@ -24,9 +26,11 @@ interface AddProductDialogProps {
   onAdd: (product: Omit<Product, "id" | "lastUpdated">) => void
   suppliers?: string[]
   categories?: string[]
+  onRefresh?: () => void
 }
 
-export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSuppliers, categories: propCategories }: AddProductDialogProps) {
+export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSuppliers, categories: propCategories, onRefresh }: AddProductDialogProps) {
+  const { push: pushToast } = useAppToast()
   const [formData, setFormData] = useState({
     name: "",
     sku: "",
@@ -40,9 +44,10 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
   // store full objects so we can map to ids
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
   const [suppliers, setSuppliers] = useState<{ id: number; name: string }[]>([])
+  const [isUploadingProducts, setIsUploadingProducts] = useState(false)
 
   useEffect(() => {
-    let mounted = true
+    let active = true
 
     // If parent passed categories, prefer them
     if (propCategories && propCategories.length) {
@@ -53,7 +58,7 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
           const res = await apiFetch('/categories/')
           if (!res.ok) throw new Error(`Failed to fetch categories: ${res.status}`)
           const data = await res.json()
-          if (!mounted) return
+          if (!active) return
           // Expecting array of objects with id & name OR plain strings
           const list = Array.isArray(data)
             ? data.map((c: any) =>
@@ -62,10 +67,10 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
                   : { id: c.id ?? 0, name: c.name ?? String(c) },
               )
             : []
-          setCategories(list)
+          if (active) setCategories(list)
         } catch (err) {
           console.error("Error fetching categories", err)
-          if (mounted) setCategories([])
+          if (active) setCategories([])
         }
       })()
     }
@@ -78,20 +83,20 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
           const res = await apiFetch('/suppliers/')
           if (!res.ok) throw new Error(`Failed to fetch suppliers: ${res.status}`)
           const data = await res.json()
-          if (!mounted) return
+          if (!active) return
           const list = Array.isArray(data)
             ? data.map((s: any) => (typeof s === "string" ? { id: 0, name: s } : { id: s.id ?? 0, name: s.name ?? String(s) }))
             : []
-          setSuppliers(list)
+          if (active) setSuppliers(list)
         } catch (err) {
           console.error("Error fetching suppliers", err)
-          if (mounted) setSuppliers([])
+          if (active) setSuppliers([])
         }
       })()
     }
 
     return () => {
-      mounted = false
+      active = false
     }
   }, [propCategories, propSuppliers])
 
@@ -237,7 +242,7 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px]" style={{ backgroundColor: 'var(--ui-card-bg)' }}>
         <DialogHeader>
           <DialogTitle>Add New Product</DialogTitle>
           <DialogDescription>
@@ -369,6 +374,72 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
               </Select>
             </div>
             {/* supplier/category creation moved to dashboard */}
+          </div>
+          <div className="pt-2 mb-6">
+            <h3 className="text-sm font-medium">Bulk import</h3>
+            <p className="text-xs text-muted-foreground mb-2">Import multiple products via CSV (headers: name, sku, category_id, description, price, quantity, low_stock_threshold, supplier_id)</p>
+            <div className="flex gap-2">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                onClick={() => {
+                  const input = document.createElement('input')
+                  input.type = 'file'
+                  input.accept = '.csv'
+                  input.onchange = async (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0]
+                    if (!file) return
+                    
+                    setIsUploadingProducts(true)
+                    try {
+                      const formData = new FormData()
+                      formData.append('file', file)
+                      
+                      const res = await apiFetch('/products/upload', {
+                        method: 'POST',
+                        body: formData
+                      })
+                      
+                      if (res.ok) {
+                        const result = await res.json()
+                        pushToast({
+                          title: "Success",
+                          description: `Successfully uploaded products!`,
+                          variant: "success"
+                        })
+                        
+                        // Close dialog and refresh data
+                        onOpenChange(false)
+                        if (onRefresh) {
+                          onRefresh()
+                        }
+                      } else {
+                        const errorData = await res.json().catch(() => ({ detail: 'Unknown error' }))
+                        pushToast({
+                          title: "Upload Failed",
+                          description: errorData.detail || 'Unknown error occurred',
+                          variant: "error"
+                        })
+                      }
+                    } catch (err) {
+                      console.error('Error uploading products:', err)
+                      pushToast({
+                        title: "Error",
+                        description: "Failed to upload products",
+                        variant: "error"
+                      })
+                    } finally {
+                      setIsUploadingProducts(false)
+                    }
+                  }
+                  input.click()
+                }}
+                disabled={isUploadingProducts}
+              >
+                <Upload className="h-4 w-4 mr-2" />
+                {isUploadingProducts ? 'Uploading...' : 'Import CSV'}
+              </Button>
+            </div>
           </div>
           <DialogFooter>
             <Button type="submit">Add Product</Button>
