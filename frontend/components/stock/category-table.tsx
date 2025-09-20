@@ -1,7 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Eye, Edit, Trash2, Package } from "lucide-react"
+import { Eye, Edit, Trash2, Package, Plus, Upload } from "lucide-react"
+import { Button } from '@/components/ui/button'
+import { useAppToast } from '@/lib/use-toast'
 import { Badge } from "@/components/ui/badge"
 import { UnifiedTable, TableColumn, TableAction } from "./unified-table"
 import { apiFetch } from "@/lib/api"
@@ -28,6 +30,7 @@ export function CategoryTable({
   onView,
   searchTerm = ""
 }: CategoryTableProps) {
+  const { push: pushToast } = useAppToast()
   const [fetchedCategories, setFetchedCategories] = useState<Category[] | null>(null)
   const [productCounts, setProductCounts] = useState<Record<number, number>>({})
   const [loading, setLoading] = useState(false)
@@ -172,21 +175,28 @@ export function CategoryTable({
   }
 
   return (
-    <UnifiedTable
-      data={filteredCategories}
-      columns={columns}
-      actions={actions}
-      loading={loading}
-      error={error}
-      emptyMessage="No categories found"
-      onDelete={handleDelete}
-      getItemId={(item) => String(item.id)}
-      getItemName={(item) => item.name}
-      enableCardView={true}
-      cardViewConfig={{
-        titleField: 'name',
-        descriptionField: 'description'
-      }}
-    />
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm font-medium">Categories</div>
+        <div />
+      </div>
+
+      <UnifiedTable
+        data={filteredCategories}
+        columns={columns}
+        actions={actions}
+        loading={loading}
+        error={error}
+        emptyMessage="No categories found"
+        onDelete={handleDelete}
+        getItemId={(item) => String(item.id)}
+        getItemName={(item) => item.name}
+        enableCardView={true}
+        cardViewConfig={{
+          titleField: 'name',
+          descriptionField: 'description'
+        }}
+      />
+    </div>
   )
 }

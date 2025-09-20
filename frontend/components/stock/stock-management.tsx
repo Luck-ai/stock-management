@@ -11,11 +11,12 @@ import { SupplierTable } from "./supplier-table"
 import { AddProductDialog } from "./add-product-dialog"
 import { EditProductDialog } from "./edit-product-dialog"
 import { SupplierForm, CategoryForm } from "./forms"
-import { Plus, Search, Package, AlertTriangle, DollarSign, Eye, Edit, Trash2, Users, Tag, Upload } from "lucide-react"
+import { Plus, Search, Package, AlertTriangle, DollarSign, Users, Tag, Upload } from "lucide-react"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '@/components/ui/dialog'
 import { apiFetch } from '@/lib/api'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { useAppToast } from '@/lib/use-toast'
+import { getStockCounts } from '@/lib/stock-utils'
 
 export interface Product {
   id: string
@@ -71,25 +72,15 @@ export function StockManagement() {
 
       if (prodsRes.ok) {
         const prodsData = await prodsRes.json()
-        const mapped = Array.isArray(prodsData)
-          ? prodsData.map((p: any) => ({
-              id: String(p.id ?? ""),
-              name: p.name ?? "",
-              sku: p.sku ?? "",
-              category: p.category?.name ?? (typeof p.category === 'string' ? p.category : '') ?? '',
-              description: p.description ?? "",
-              quantity: Number(p.quantity ?? 0),
-              price: Number(p.price ?? 0),
-              lowStockThreshold: Number(p.low_stock_threshold ?? p.lowStockThreshold ?? 0),
-              statusLabel: p.status ?? p.quantity_warning_label ?? undefined,
-              statusVariant: p.quantity_warning_variant ?? undefined,
-              isLowStockFlag: typeof p.is_low_stock === 'boolean' ? p.is_low_stock : undefined,
-              supplier: p.supplier?.name ?? (typeof p.supplier === 'string' ? p.supplier : '') ?? '',
-              lastUpdated: p.last_updated ?? p.lastUpdated ?? "",
-            }))
-          : []
-      // always set products to the mapped array (may be empty) so child knows parent loaded
-      setProducts(mapped)
+        const data = prodsData
+        import("@/lib/response-mappers").then(({ normalizeProduct }) => {
+          const mapped = Array.isArray(data) ? data.map((p: any) => normalizeProduct(p)) : []
+          // always set products to the mapped array (may be empty) so child knows parent loaded
+          setProducts(mapped)
+        }).catch((err) => {
+          console.error('Failed to normalize products', err)
+          setProducts([])
+        })
       }
 
       // Use the already-parsed catsData and supsData to populate names lists and full objects
@@ -124,25 +115,16 @@ export function StockManagement() {
     }
   }
 
-  const outOfStockCount = (products ?? []).filter((product) => {
-    const qty = Number(product.quantity ?? 0)
-    const th = Number(product.lowStockThreshold ?? 0)
-    if (!th || th <= 0) {
-      return qty === 0
-    }
-    return qty <= th
-  }).length
-
-  const lowStockCountUsingLogic = (products ?? []).filter((product) => {
-    const qty = Number(product.quantity ?? 0)
-    const th = Number(product.lowStockThreshold ?? 0)
-    const margin = Math.ceil(product.lowStockThreshold * 0.2)
-    if (!th || th <= 0) return false
-    return qty > 0 && (Math.abs(th - qty) <= margin)
-  }).length
+  // Use centralized stock counting logic
+  const stockCounts = getStockCounts(products ?? [])
+  const outOfStockCount = stockCounts.outOfStock
+  const lowStockCountUsingLogic = stockCounts.lowStock
 
   const totalProducts = (products ?? []).length
   const totalValue = (products ?? []).reduce((sum, product) => sum + product.quantity * product.price, 0)
+
+  // Control for clicking summary cards to filter products
+  const [productStockFilter, setProductStockFilter] = useState<string>('All')
 
   const handleAddProduct = async (newProduct: Omit<Product, "id" | "lastUpdated">) => {
     const tempId = Date.now().toString()
@@ -178,7 +160,6 @@ export function StockManagement() {
         return
       }
       const created = await res.json()
-      console.log("Supplier created", created)
       pushToast({
         title: "Success",
         description: `Supplier "${supplier.name}" created successfully`,
@@ -214,7 +195,6 @@ export function StockManagement() {
         return
       }
       const created = await res.json()
-      console.log("Category created", created)
       pushToast({
         title: "Success",
         description: `Category "${category.name}" created successfully`,
@@ -358,86 +338,227 @@ export function StockManagement() {
   return (
     <div className="space-y-6">
       <div className="flex items-start justify-between flex-wrap gap-4">
-        <div>
-          <h1 className="text-3xl font-extrabold">Stock Management</h1>
-          <p className="mt-1 text-sm text-muted-foreground">Manage your inventory and track stock levels</p>
-        </div>
-
-        <div className="ml-auto flex items-center gap-3">
-          <Button onClick={() => setIsAddSupplierOpen(true)}>
-            <Users className="h-4 w-4 mr-2" />
-            <span>Add Suppliers</span>
-          </Button>
-
-          <Button onClick={() => setIsCreateCategoryOpen(true)}>
-            <Tag className="h-4 w-4 mr-2" />
-            <span>Add Categories</span>
-          </Button>
-
-          <Button onClick={() => setIsAddDialogOpen(true)}>
-            <Plus className="h-4 w-4 mr-2" />
-            <span>Add Product</span>
-          </Button>
-        </div>
+            <div>
+              <h1 className="text-3xl font-extrabold">Stock Management</h1>
+              <p className="mt-1 text-sm text-muted-foreground">Manage your inventory and track stock levels</p>
+            </div>
+            <div className="flex items-center space-x-2">
+              <Button onClick={async () => {
+                const input = document.createElement('input')
+                input.type = 'file'
+                input.accept = '.csv'
+                input.onchange = async (e) => {
+                  const file = (e.target as HTMLInputElement).files?.[0]
+                  if (!file) return
+                  const formData = new FormData()
+                  formData.append('file', file)
+                  try {
+                    const res = await apiFetch('/sales/upload', { method: 'POST', body: formData })
+                    if (res.ok) {
+                      const data = await res.json().catch(() => null)
+                      await loadData()
+                      pushToast({ title: 'Success', description: data?.message || 'Sales uploaded', variant: 'success' })
+                    } else {
+                      const txt = await res.text().catch(() => '')
+                      pushToast({ title: 'Upload failed', description: txt || `Status ${res.status}`, variant: 'error' })
+                    }
+                  } catch (err) {
+                    console.error('Upload sales error', err)
+                    pushToast({ title: 'Error', description: 'Failed to upload sales CSV', variant: 'error' })
+                  }
+                }
+                input.click()
+              }}>
+                <Upload className="h-4 w-4 mr-2" />
+                <span>Upload Sales CSV</span>
+              </Button>
+            </div>
       </div>
 
       {/* Summary Cards */}
       <div className="grid gap-4 md:grid-cols-4">
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <div className="flex items-center space-x-2">
-              <Package className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-sm font-medium">Total Products</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalProducts}</div>
-            <p className="text-xs text-muted-foreground">Active inventory items</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <div className="flex items-center space-x-2">
-              <AlertTriangle className="h-4 w-4 text-red-600" />
-              <CardTitle className="text-sm font-medium">Out of Stock</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-red-700">{outOfStockCount}</div>
-            <p className="text-xs text-muted-foreground">Items below threshold</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <div className="flex items-center space-x-2">
-              <AlertTriangle className="h-4 w-4 text-yellow-600" />
-              <CardTitle className="text-sm font-medium">Low Stock Items</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold text-yellow-700">{lowStockCountUsingLogic}</div>
-            <p className="text-xs text-muted-foreground">Items low in stock</p>
-          </CardContent>
-        </Card>
-        <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-            <div className="flex items-center space-x-2">
-              <DollarSign className="h-4 w-4 text-muted-foreground" />
-              <CardTitle className="text-sm font-medium">Total Value</CardTitle>
-            </div>
-          </CardHeader>
-          <CardContent>
-            <div className="text-2xl font-bold">{totalValue.toLocaleString()}</div>
-            <p className="text-xs text-muted-foreground">Current inventory value</p>
-          </CardContent>
-        </Card>
+        <div className="cursor-pointer" onClick={() => { setActiveTab('products'); setProductStockFilter('All') }}>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <div className="flex items-center space-x-2">
+                <Package className="h-4 w-4 text-muted-foreground" />
+                <CardTitle className="text-sm font-medium">Total Products</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{totalProducts}</div>
+              <p className="text-xs text-muted-foreground">Active inventory items</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="cursor-pointer" onClick={() => { setActiveTab('products'); setProductStockFilter('Out of Stock') }}>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <div className="flex items-center space-x-2">
+                <AlertTriangle className="h-4 w-4 text-red-600" />
+                <CardTitle className="text-sm font-medium">Out of Stock</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-red-700">{outOfStockCount}</div>
+              <p className="text-xs text-muted-foreground">Items below threshold</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="cursor-pointer" onClick={() => { setActiveTab('products'); setProductStockFilter('Low Stock') }}>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <div className="flex items-center space-x-2">
+                <AlertTriangle className="h-4 w-4 text-yellow-600" />
+                <CardTitle className="text-sm font-medium">Low Stock Items</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold text-yellow-700">{lowStockCountUsingLogic}</div>
+              <p className="text-xs text-muted-foreground">Items low in stock</p>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="cursor-pointer" onClick={() => { setActiveTab('products'); setProductStockFilter('All') }}>
+          <Card>
+            <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+              <div className="flex items-center space-x-2">
+                <DollarSign className="h-4 w-4 text-muted-foreground" />
+                <CardTitle className="text-sm font-medium">Total Value</CardTitle>
+              </div>
+            </CardHeader>
+            <CardContent>
+              <div className="text-2xl font-bold">{totalValue.toLocaleString()}</div>
+              <p className="text-xs text-muted-foreground">Current inventory value</p>
+            </CardContent>
+          </Card>
+        </div>
       </div>
 
       {/* Search and Filter */}
       <Card>
-        <CardHeader>
-          <CardTitle>Inventory</CardTitle>
-          <CardDescription>Search and manage your product inventory</CardDescription>
+        <CardHeader className="flex items-center justify-between">
+          <div>
+            <CardTitle>Inventory</CardTitle>
+            <CardDescription>Search and manage your product inventory</CardDescription>
+          </div>
+          <div className="flex items-center space-x-2">
+            {activeTab === 'products' && (
+              <>
+                <Button onClick={() => setIsAddDialogOpen(true)}>
+                  <Plus className="h-4 w-4 mr-2" />
+                  <span>Add Product</span>
+                </Button>
+                <Button onClick={async () => {
+                  const input = document.createElement('input')
+                  input.type = 'file'
+                  input.accept = '.csv'
+                  input.onchange = async (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0]
+                    if (!file) return
+                    const formData = new FormData()
+                    formData.append('file', file)
+                    try {
+                      const res = await apiFetch('/products/upload', { method: 'POST', body: formData })
+                      if (res.ok) {
+                        await loadData()
+                        pushToast({ title: 'Success', description: 'Products uploaded', variant: 'success' })
+                      } else {
+                        const txt = await res.text().catch(() => '')
+                        pushToast({ title: 'Upload failed', description: txt || `Status ${res.status}`, variant: 'error' })
+                      }
+                    } catch (err) {
+                      console.error('Upload products error', err)
+                      pushToast({ title: 'Error', description: 'Failed to upload products', variant: 'error' })
+                    }
+                  }
+                  input.click()
+                }}>
+                  <Upload className="h-4 w-4 mr-2" />
+                  <span>Upload CSV</span>
+                </Button>
+              </>
+            )}
+
+            {activeTab === 'categories' && (
+              <>
+                <Button onClick={() => setIsCreateCategoryOpen(true)}>
+                  <Tag className="h-4 w-4 mr-2" />
+                  <span>Add Category</span>
+                </Button>
+                <Button onClick={async () => {
+                  const input = document.createElement('input')
+                  input.type = 'file'
+                  input.accept = '.csv'
+                  input.onchange = async (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0]
+                    if (!file) return
+                    const formData = new FormData()
+                    formData.append('file', file)
+                    try {
+                      const res = await apiFetch('/categories/upload', { method: 'POST', body: formData })
+                      if (res.ok) {
+                        await refreshCategoriesAndSuppliers()
+                        await loadData()
+                        pushToast({ title: 'Success', description: 'Categories uploaded', variant: 'success' })
+                      } else {
+                        const txt = await res.text().catch(() => '')
+                        pushToast({ title: 'Upload failed', description: txt || `Status ${res.status}`, variant: 'error' })
+                      }
+                    } catch (err) {
+                      console.error('Upload categories error', err)
+                      pushToast({ title: 'Error', description: 'Failed to upload categories', variant: 'error' })
+                    }
+                  }
+                  input.click()
+                }}>
+                  <Upload className="h-4 w-4 mr-2" />
+                  <span>Upload CSV</span>
+                </Button>
+              </>
+            )}
+
+            {activeTab === 'suppliers' && (
+              <>
+                <Button onClick={() => setIsAddSupplierOpen(true)}>
+                  <Users className="h-4 w-4 mr-2" />
+                  <span>Add Supplier</span>
+                </Button>
+                <Button onClick={async () => {
+                  const input = document.createElement('input')
+                  input.type = 'file'
+                  input.accept = '.csv'
+                  input.onchange = async (e) => {
+                    const file = (e.target as HTMLInputElement).files?.[0]
+                    if (!file) return
+                    const formData = new FormData()
+                    formData.append('file', file)
+                    try {
+                      const res = await apiFetch('/suppliers/upload', { method: 'POST', body: formData })
+                      if (res.ok) {
+                        await refreshCategoriesAndSuppliers()
+                        await loadData()
+                        pushToast({ title: 'Success', description: 'Suppliers uploaded', variant: 'success' })
+                      } else {
+                        const txt = await res.text().catch(() => '')
+                        pushToast({ title: 'Upload failed', description: txt || `Status ${res.status}`, variant: 'error' })
+                      }
+                    } catch (err) {
+                      console.error('Upload suppliers error', err)
+                      pushToast({ title: 'Error', description: 'Failed to upload suppliers', variant: 'error' })
+                    }
+                  }
+                  input.click()
+                }}>
+                  <Upload className="h-4 w-4 mr-2" />
+                  <span>Upload CSV</span>
+                </Button>
+              </>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           <div className="flex items-center space-x-2 mb-4">
@@ -475,6 +596,7 @@ export function StockManagement() {
                 onDelete={handleDeleteProduct} 
                 categories={categories}
                 searchTerm={searchTerm}
+                stockFilter={productStockFilter}
               />
             </TabsContent>
             
@@ -545,10 +667,8 @@ export function StockManagement() {
               error={confirmCategoryError}
               onConfirm={async () => {
                 try {
-                  console.log('Attempting to delete category:', confirmDeleteCategory)
                   setConfirmCategoryError(null)
                   const res = await apiFetch(`/categories/${confirmDeleteCategory.id}`, { method: 'DELETE' })
-                  console.log('Delete category response:', { status: res.status, ok: res.ok })
                   if (!res.ok) {
                     // Enhanced error parsing
                     let errorMessage = `Failed to delete category (status ${res.status})`
@@ -612,10 +732,8 @@ export function StockManagement() {
               error={confirmSupplierError}
               onConfirm={async () => {
                 try {
-                  console.log('Attempting to delete supplier:', confirmDeleteSupplier)
                   setConfirmSupplierError(null)
                   const res = await apiFetch(`/suppliers/${confirmDeleteSupplier.id}`, { method: 'DELETE' })
-                  console.log('Delete supplier response:', { status: res.status, ok: res.ok })
                   if (!res.ok) {
                     // Enhanced error parsing
                     let errorMessage = `Failed to delete supplier (status ${res.status})`

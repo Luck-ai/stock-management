@@ -38,6 +38,18 @@ class ProductCreate(ProductBase):
     pass
 
 
+class ProductCSVUpload(BaseModel):
+    """Schema for CSV product uploads that uses category and supplier names instead of IDs"""
+    name: str = Field(..., max_length=255)
+    sku: Optional[str] = None
+    category: Optional[str] = None  # Category name instead of ID
+    description: Optional[str] = None
+    price: int
+    quantity: int = 0
+    low_stock_threshold: int = 0
+    supplier: Optional[str] = None  # Supplier name instead of ID
+
+
 class ProductUpdate(BaseModel):
     name: Optional[str] = None
     sku: Optional[str] = None
@@ -179,10 +191,16 @@ class PurchaseOrderBase(BaseModel):
     quantity_ordered: int
     status: str = "pending"
     notes: Optional[str] = None
+    notify_by_email: bool = False
 
 
 class PurchaseOrderCreate(PurchaseOrderBase):
     user_id: Optional[int] = None
+
+
+class PurchaseOrderBatchCreate(BaseModel):
+    """Create multiple purchase orders in one request."""
+    orders: List[PurchaseOrderCreate]
 
 
 class PurchaseOrderUpdate(BaseModel):
@@ -190,6 +208,12 @@ class PurchaseOrderUpdate(BaseModel):
     quantity_ordered: Optional[int] = None
     status: Optional[str] = None
     notes: Optional[str] = None
+    notify_by_email: Optional[bool] = None
+    # Ratings (optional; only set after completion)
+    on_time_delivery: Optional[int] = None
+    quality_score: Optional[int] = None
+    cost_efficiency: Optional[int] = None
+    overall_rating: Optional[int] = None
 
 
 class PurchaseOrderOut(PurchaseOrderBase):
@@ -198,6 +222,11 @@ class PurchaseOrderOut(PurchaseOrderBase):
     order_date: Optional[datetime.datetime] = None
     supplier: Optional[SupplierOut] = None
     product: Optional[ProductOut] = None
+    notify_by_email: bool = False
+    on_time_delivery: Optional[int] = None
+    quality_score: Optional[int] = None
+    cost_efficiency: Optional[int] = None
+    overall_rating: Optional[int] = None
 
     class Config:
         from_attributes = True

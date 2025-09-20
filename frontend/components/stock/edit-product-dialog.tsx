@@ -5,6 +5,7 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { apiFetch } from '@/lib/api'
+import { normalizeProduct } from '@/lib/response-mappers'
 import {
   Dialog,
   DialogContent,
@@ -169,23 +170,20 @@ export function EditProductDialog({ open, onOpenChange, product, onEdit }: EditP
       }
 
       const updated = await res.json()
-
-      // Resolve supplier & category display names similar to add flow
-      const supplierName = (updated.supplier && (updated.supplier.name ?? String(updated.supplier))) || formData.supplier || product.supplier || ""
-      const categoryName = (updated.category && (updated.category.name ?? String(updated.category))) || formData.category || product.category || ""
+      const normalized = normalizeProduct(updated)
 
       const updatedProduct: Product = {
         ...product,
-        id: updated.id ?? product.id,
-        name: updated.name ?? formData.name,
-        sku: updated.sku ?? formData.sku ?? "",
-        category: categoryName,
-        description: updated.description ?? product.description ?? "",
-  quantity: (updated.quantity ?? Number.parseInt(formData.quantity)) || 0,
-  price: (updated.price ?? Number.parseFloat(formData.price)) || 0,
-  lowStockThreshold: (updated.low_stock_threshold ?? Number.parseInt(formData.lowStockThreshold)) || 0,
-        supplier: supplierName,
-        lastUpdated: (updated.last_updated as string) ?? (updated.updated_at as string) ?? product.lastUpdated,
+        id: normalized.id ?? product.id,
+        name: normalized.name ?? formData.name,
+        sku: normalized.sku ?? formData.sku ?? "",
+        category: normalized.category ?? formData.category ?? product.category ?? "",
+        description: normalized.description ?? product.description ?? "",
+        quantity: normalized.quantity ?? (Number.parseInt(formData.quantity) || product.quantity),
+        price: normalized.price ?? (Number.parseFloat(formData.price) || product.price),
+        lowStockThreshold: normalized.lowStockThreshold ?? (Number.parseInt(formData.lowStockThreshold) || product.lowStockThreshold),
+        supplier: normalized.supplier ?? formData.supplier ?? product.supplier ?? "",
+        lastUpdated: normalized.lastUpdated ?? product.lastUpdated,
       }
 
       onEdit(updatedProduct)

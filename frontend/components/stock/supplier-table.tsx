@@ -1,7 +1,9 @@
 "use client"
 
 import { useState, useEffect } from "react"
-import { Eye, Edit, Trash2, Mail, Phone, MapPin, Package } from "lucide-react"
+import { Eye, Edit, Trash2, Mail, Phone, MapPin, Package, Plus, Upload } from "lucide-react"
+import { Button } from '@/components/ui/button'
+import { useAppToast } from '@/lib/use-toast'
 import { Badge } from "@/components/ui/badge"
 import { UnifiedTable, TableColumn, TableAction } from "./unified-table"
 import { apiFetch } from "@/lib/api"
@@ -30,6 +32,7 @@ export function SupplierTable({
   onView,
   searchTerm = ""
 }: SupplierTableProps) {
+  const { push: pushToast } = useAppToast()
   const [fetchedSuppliers, setFetchedSuppliers] = useState<Supplier[] | null>(null)
   const [productCounts, setProductCounts] = useState<Record<number, number>>({})
   const [loading, setLoading] = useState(false)
@@ -69,7 +72,6 @@ export function SupplierTable({
           : []
         setFetchedSuppliers(mapped)
       } catch (err: any) {
-        console.error(err)
         if (active) setError(err.message || String(err))
       } finally {
         if (active) setLoading(false)
@@ -212,23 +214,30 @@ export function SupplierTable({
   }
 
   return (
-    <UnifiedTable
-      data={filteredSuppliers}
-      columns={columns}
-      actions={actions}
-      loading={loading}
-      error={error}
-      emptyMessage="No suppliers found"
-      onDelete={handleDelete}
-      getItemId={(item) => String(item.id)}
-      getItemName={(item) => item.name}
-      enableCardView={true}
-      cardViewConfig={{
-        titleField: 'name',
-        subtitleField: 'email',
-        descriptionField: 'address',
-        categoryField: 'phone'
-      }}
-    />
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <div className="text-sm font-medium">Suppliers</div>
+        <div />
+      </div>
+
+      <UnifiedTable
+        data={filteredSuppliers}
+        columns={columns}
+        actions={actions}
+        loading={loading}
+        error={error}
+        emptyMessage="No suppliers found"
+        onDelete={handleDelete}
+        getItemId={(item) => String(item.id)}
+        getItemName={(item) => item.name}
+        enableCardView={true}
+        cardViewConfig={{
+          titleField: 'name',
+          subtitleField: 'email',
+          descriptionField: 'address',
+          categoryField: 'phone'
+        }}
+      />
+    </div>
   )
 }

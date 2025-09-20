@@ -4,53 +4,13 @@ from sqlalchemy import select, and_
 from sqlalchemy.orm import selectinload
 from typing import List
 from .. import crud, schemas, models
+import asyncio
+from ..routers.email import send_order_summary
+from ..routers.email import send_batch_order_summary
 from ..database import get_db
 from ..security import get_current_user
 
 router = APIRouter(prefix="/restock", tags=["restock"])
-
-
-@router.get("/low-stock", response_model=List[schemas.ProductOut])
-async def get_low_stock_products(
-    db: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
-):
-    """Get all products that are at or below their low stock threshold"""
-    stmt = select(models.Product).options(
-        selectinload(models.Product.supplier),
-        selectinload(models.Product.category)
-    ).where(
-        and_(
-            models.Product.user_id == current_user.id,
-            models.Product.quantity <= models.Product.low_stock_threshold
-        )
-    ).order_by(models.Product.quantity.asc())
-    
-    result = await db.execute(stmt)
-    products = result.scalars().all()
-    return products
-
-
-@router.get("/out-of-stock", response_model=List[schemas.ProductOut])
-async def get_out_of_stock_products(
-    db: AsyncSession = Depends(get_db),
-    current_user: models.User = Depends(get_current_user)
-):
-    """Get all products that are completely out of stock"""
-    stmt = select(models.Product).options(
-        selectinload(models.Product.supplier),
-        selectinload(models.Product.category)
-    ).where(
-        and_(
-            models.Product.user_id == current_user.id,
-            models.Product.quantity == 0
-        )
-    ).order_by(models.Product.name)
-    
-    result = await db.execute(stmt)
-    products = result.scalars().all()
-    return products
-
 
 @router.get("/summary", response_model=schemas.RestockSummary)
 async def get_restock_summary(
@@ -132,7 +92,8 @@ async def create_purchase_order(
         product_id=order.product_id,
         quantity_ordered=order.quantity_ordered,
         status=order.status,
-        notes=order.notes
+        notes=order.notes,
+        notify_by_email=getattr(order, 'notify_by_email', False)
     )
     
     db.add(db_order)
@@ -148,7 +109,21 @@ async def create_purchase_order(
     
     result = await db.execute(stmt)
     order_with_relations = result.scalar_one()
-    
+
+    # If the user requested to be notified by email for this order, send an
+    # order summary asynchronously (fire-and-forget) so we don't delay the
+    # API response. We pass the ORM object that already has related
+    # product/supplier loaded via selectinload so the email builder won't hit
+    # the DB.
+    try:
+        if getattr(order_with_relations, 'notify_by_email', False) and getattr(current_user, 'email', None):
+            # schedule async send in background
+            asyncio.create_task(send_order_summary(current_user.email, order_with_relations, current_user.full_name))
+    except Exception:
+        # Don't propagate email sending errors to the API caller; it's best-effort
+        # and will be retried or logged in a real system.
+        pass
+
     return order_with_relations
 
 
@@ -178,6 +153,78 @@ async def get_purchase_orders(
     result = await db.execute(stmt)
     orders = result.scalars().all()
     return orders
+
+
+
+@router.post("/orders/batch", response_model=List[schemas.PurchaseOrderOut])
+async def create_purchase_orders_batch(
+    batch: schemas.PurchaseOrderBatchCreate,
+    db: AsyncSession = Depends(get_db),
+    current_user: models.User = Depends(get_current_user)
+):
+    """Create multiple purchase orders in one transaction and send a single email summary for those that requested notification."""
+
+    created_orders = []
+
+    try:
+        for order in batch.orders:
+            # validate product ownership
+            product = await db.get(models.Product, order.product_id)
+            if not product or product.user_id != current_user.id:
+                raise HTTPException(status_code=404, detail=f"Product {order.product_id} not found")
+
+            if order.supplier_id:
+                supplier = await db.get(models.Supplier, order.supplier_id)
+                if not supplier or supplier.user_id != current_user.id:
+                    raise HTTPException(status_code=404, detail=f"Supplier {order.supplier_id} not found")
+
+            db_order = models.PurchaseOrder(
+                user_id=current_user.id,
+                supplier_id=order.supplier_id,
+                product_id=order.product_id,
+                quantity_ordered=order.quantity_ordered,
+                status=order.status,
+                notes=order.notes,
+                notify_by_email=getattr(order, 'notify_by_email', False)
+            )
+
+            db.add(db_order)
+            # flush to assign ids and order_date
+            await db.flush()
+            await db.refresh(db_order)
+            created_orders.append(db_order)
+
+        # commit all created orders atomically
+        await db.commit()
+    except Exception:
+        # Rollback on any error and re-raise so API caller gets the error
+        try:
+            await db.rollback()
+        except Exception:
+            pass
+        raise
+
+    # Load relationships for each created order (avoid lazy IO later)
+    orders_with_rel = []
+    for o in created_orders:
+        stmt = select(models.PurchaseOrder).options(
+            selectinload(models.PurchaseOrder.supplier),
+            selectinload(models.PurchaseOrder.product).selectinload(models.Product.supplier),
+            selectinload(models.PurchaseOrder.product).selectinload(models.Product.category)
+        ).where(models.PurchaseOrder.id == o.id)
+        res = await db.execute(stmt)
+        orders_with_rel.append(res.scalar_one())
+
+    # If any of the created orders requested email notification, send a single batch email
+    try:
+        notify_orders = [o for o in orders_with_rel if getattr(o, 'notify_by_email', False)]
+        if notify_orders and getattr(current_user, 'email', None):
+            asyncio.create_task(send_batch_order_summary(current_user.email, notify_orders, current_user.full_name))
+    except Exception:
+        # best-effort; don't fail the API if email sending fails
+        pass
+
+    return orders_with_rel
 
 
 @router.get("/orders/{order_id}", response_model=schemas.PurchaseOrderOut)
@@ -266,7 +313,22 @@ async def update_purchase_order(
             db.add(stock_movement)
             await db.commit()
     
-    return order
+    # Re-fetch the order with relationships loaded before returning to avoid
+    # Pydantic triggering lazy IO (which causes MissingGreenlet in async context).
+    stmt = select(models.PurchaseOrder).options(
+        selectinload(models.PurchaseOrder.supplier),
+        selectinload(models.PurchaseOrder.product).selectinload(models.Product.supplier),
+        selectinload(models.PurchaseOrder.product).selectinload(models.Product.category)
+    ).where(
+        and_(
+            models.PurchaseOrder.id == order.id,
+            models.PurchaseOrder.user_id == current_user.id
+        )
+    )
+
+    result = await db.execute(stmt)
+    fresh_order = result.scalar_one()
+    return fresh_order
 
 
 @router.delete("/orders/{order_id}")

@@ -14,8 +14,9 @@ router = APIRouter(prefix="/suppliers", tags=["suppliers"])
 @router.post("/", response_model=schemas.SupplierOut)
 async def create_supplier(supplier: schemas.SupplierCreate, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     # enforce ownership from the authenticated token rather than trusting client-supplied user_id
+    user_id = current_user.id
     data = supplier.model_dump()
-    data['user_id'] = current_user.id
+    data['user_id'] = user_id
     s_schema = schemas.SupplierCreate.model_validate(data)
     try:
         return await crud.create_supplier(db, s_schema)
@@ -44,6 +45,9 @@ async def get_supplier(supplier_id: int, db: AsyncSession = Depends(get_db), cur
 async def upload_suppliers_csv(file: UploadFile = File(...), db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Upload a CSV file with supplier rows. Expected headers: name, email, phone, address"""
     
+    # Capture user_id early to avoid async context issues
+    user_id = current_user.id
+    
     try:
         raw = await file.read()
         stream = io.StringIO(raw.decode('utf-8'))
@@ -59,7 +63,7 @@ async def upload_suppliers_csv(file: UploadFile = File(...), db: AsyncSession = 
     for row in reader:
         row_no += 1
         data = {k: (v if v != '' else None) for k, v in row.items()}
-        data['user_id'] = current_user.id
+        data['user_id'] = user_id
         try:
             s_schema = schemas.SupplierCreate.model_validate(data)
         except Exception as e:
@@ -67,7 +71,7 @@ async def upload_suppliers_csv(file: UploadFile = File(...), db: AsyncSession = 
             continue
         try:
             created = await crud.create_supplier(db, s_schema)
-            results.append({"row": row_no, "ok": True, "supplier_id": created.id, "user_id": created.user_id})
+            results.append({"row": row_no, "ok": True, "supplier_id": created.id, "user_id": user_id})
         except ValueError as e:
             results.append({"row": row_no, "ok": False, "error": str(e)})
         except Exception as e:

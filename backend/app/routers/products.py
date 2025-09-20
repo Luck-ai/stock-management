@@ -15,8 +15,9 @@ router = APIRouter(prefix="/products", tags=["products"])
 @router.post("/", response_model=schemas.ProductOut)
 async def create_product(product: schemas.ProductCreate, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     try:
+        user_id = current_user.id
         data = product.model_dump()
-        data['user_id'] = current_user.id
+        data['user_id'] = user_id
         p_schema = schemas.ProductCreate.model_validate(data)
         return await crud.create_product(db, p_schema)
     except ValueError as e:
@@ -59,15 +60,19 @@ async def delete_product(product_id: int, db: AsyncSession = Depends(get_db), cu
 async def upload_products_csv(file: UploadFile = File(...), db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Upload a CSV file (bytes) containing product rows. Returns per-row results.
 
-    Expected CSV headers (any order): name, sku, category_id, description, price, quantity, low_stock_threshold, supplier_id
+    Expected CSV headers (any order): name, sku, category, description, price, quantity, low_stock_threshold, supplier
+    
+    Note: category and supplier are names (not IDs) and must exist for the current user.
+    If a category or supplier name doesn't exist, an error will be raised for that row.
     """
-    # We accept raw bytes and parse CSV from it. Use standard library csv.
+    # Capture user_id early to avoid async context issues
+    user_id = current_user.id
     
     try:
         raw = await file.read()
         stream = io.StringIO(raw.decode('utf-8'))
     except Exception:
-        raise HTTPException(status_code=400, detail="Unable to read/decod e uploaded file as UTF-8")
+        raise HTTPException(status_code=400, detail="Unable to read/decode uploaded file as UTF-8")
 
     reader = csv.DictReader(stream)
     if reader.fieldnames is None:
@@ -79,9 +84,10 @@ async def upload_products_csv(file: UploadFile = File(...), db: AsyncSession = D
         row_no += 1
         # Normalize empty strings to None
         data = {k: (v if v != '' else None) for k, v in row.items()}
+        
         # Attempt minimal type coercion, abort row on first invalid field
         bad = False
-        for int_field in ['price', 'quantity', 'low_stock_threshold', 'category_id', 'supplier_id']:
+        for int_field in ['price', 'quantity', 'low_stock_threshold']:
             if data.get(int_field) is not None:
                 try:
                     data[int_field] = int(float(data[int_field]))
@@ -91,13 +97,46 @@ async def upload_products_csv(file: UploadFile = File(...), db: AsyncSession = D
                     break
         if bad:
             continue
-        # Attach current user id so ownership is preserved
-        data['user_id'] = current_user.id
+
+        # Validate and resolve category and supplier names to IDs
+        category_id = None
+        supplier_id = None
+        
+        # Handle category lookup
+        if data.get('category'):
+            category = await crud.get_category_by_name(db, data['category'], user_id)
+            if not category:
+                results.append({"row": row_no, "ok": False, "error": f"Category '{data['category']}' not found for current user"})
+                continue
+            category_id = category.id
+        
+        # Handle supplier lookup
+        if data.get('supplier'):
+            supplier = await crud.get_supplier_by_name(db, data['supplier'], user_id)
+            if not supplier:
+                results.append({"row": row_no, "ok": False, "error": f"Supplier '{data['supplier']}' not found for current user"})
+                continue
+            supplier_id = supplier.id
+
+        # Build product data with resolved IDs
+        product_data = {
+            'name': data.get('name'),
+            'sku': data.get('sku'),
+            'category_id': category_id,
+            'description': data.get('description'),
+            'price': data.get('price'),
+            'quantity': data.get('quantity', 0),
+            'low_stock_threshold': data.get('low_stock_threshold', 0),
+            'supplier_id': supplier_id,
+            'user_id': user_id
+        }
+        
         try:
-            p_schema = schemas.ProductCreate.model_validate(data)
+            p_schema = schemas.ProductCreate.model_validate(product_data)
         except Exception as e:
             results.append({"row": row_no, "ok": False, "error": f"Validation error: {e}"})
             continue
+            
         try:
             created = await crud.create_product(db, p_schema)
             results.append({"row": row_no, "ok": True, "product_id": created.id})

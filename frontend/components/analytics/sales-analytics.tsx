@@ -15,37 +15,71 @@ import {
   PieChart,
   Cell,
 } from "recharts"
+import { useEffect, useState } from "react"
+import { getSales, getTopProducts, getProducts, filterByTimeRange } from "@/lib/api"
 
 interface SalesAnalyticsProps {
   timeRange: string
 }
 
-// Mock sales data
-const salesTrendData = [
-  { month: "Jan", revenue: 45000, orders: 180, avgOrderValue: 250 },
-  { month: "Feb", revenue: 52000, orders: 208, avgOrderValue: 250 },
-  { month: "Mar", revenue: 48000, orders: 192, avgOrderValue: 250 },
-  { month: "Apr", revenue: 61000, orders: 244, avgOrderValue: 250 },
-  { month: "May", revenue: 55000, orders: 220, avgOrderValue: 250 },
-  { month: "Jun", revenue: 67000, orders: 268, avgOrderValue: 250 },
-]
-
-const topProductsData = [
-  { name: "Wireless Headphones", sales: 245, revenue: 24495 },
-  { name: "Bluetooth Speaker", sales: 189, revenue: 15111 },
-  { name: "USB-C Cable", sales: 156, revenue: 3118 },
-  { name: "Wireless Mouse", sales: 134, revenue: 4016 },
-  { name: "Laptop Stand", sales: 98, revenue: 4899 },
-]
-
-const salesChannelData = [
-  { name: "Online Store", value: 45, color: "hsl(var(--chart-1))" },
-  { name: "Retail Partners", value: 30, color: "hsl(var(--chart-2))" },
-  { name: "Direct Sales", value: 15, color: "hsl(var(--chart-3))" },
-  { name: "Marketplace", value: 10, color: "hsl(var(--chart-4))" },
-]
-
 export function SalesAnalytics({ timeRange }: SalesAnalyticsProps) {
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [topProducts, setTopProducts] = useState<{ name: string; sales: number; revenue: number }[]>([])
+
+  useEffect(() => {
+    let mounted = true
+    setLoading(true)
+    setError(null)
+
+    async function load() {
+      try {
+        // Fetch sales and products to compute top products within the selected timeRange
+        const [salesRaw, products] = await Promise.all([getSales(), getProducts()])
+        if (!mounted) return
+
+        const sales = filterByTimeRange(salesRaw || [], timeRange, 'sale_date')
+
+        const productMap = new Map<number, any>()
+        products.forEach((p) => productMap.set(p.id, p))
+
+        const agg = new Map<number, { sales: number; revenue: number }>()
+        sales.forEach((s: any) => {
+          const pid = s.product_id
+          const entry = agg.get(pid) || { sales: 0, revenue: 0 }
+          entry.sales += s.quantity ?? 0
+          entry.revenue += (s.quantity ?? 0) * (s.sale_price ?? (productMap.get(pid)?.price || 0) / 100)
+          agg.set(pid, entry)
+        })
+
+        const arr = Array.from(agg.entries()).map(([pid, v]) => ({
+          name: productMap.get(pid)?.name || `Product ${pid}`,
+          sales: v.sales,
+          revenue: v.revenue,
+        }))
+
+        arr.sort((a, b) => b.sales - a.sales)
+        setTopProducts(arr.slice(0, 10))
+      } catch (err: any) {
+        setError(err?.message || 'Failed to load sales data')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    load()
+    return () => {
+      mounted = false
+    }
+  }, [timeRange])
+  const salesTrendData: any[] = []
+  const salesChannelData: { name: string; value: number; color: string }[] = [
+    { name: 'Online Store', value: 45, color: 'hsl(var(--chart-1))' },
+    { name: 'Retail Partners', value: 30, color: 'hsl(var(--chart-2))' },
+    { name: 'Direct Sales', value: 15, color: 'hsl(var(--chart-3))' },
+    { name: 'Marketplace', value: 10, color: 'hsl(var(--chart-4))' },
+  ]
+
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <Card className="md:col-span-2">
@@ -57,12 +91,12 @@ export function SalesAnalytics({ timeRange }: SalesAnalyticsProps) {
           <ChartContainer
             config={{
               revenue: {
-                label: "Revenue ($)",
-                color: "hsl(var(--chart-1))",
+                label: 'Revenue ($)',
+                color: 'hsl(var(--chart-1))',
               },
               orders: {
-                label: "Orders",
-                color: "hsl(var(--chart-2))",
+                label: 'Orders',
+                color: 'hsl(var(--chart-2))',
               },
             }}
             className="h-[300px]"
@@ -91,14 +125,14 @@ export function SalesAnalytics({ timeRange }: SalesAnalyticsProps) {
           <ChartContainer
             config={{
               sales: {
-                label: "Units Sold",
-                color: "hsl(var(--chart-3))",
+                label: 'Units Sold',
+                color: 'hsl(var(--chart-3))',
               },
             }}
             className="h-[300px]"
           >
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={topProductsData} layout="horizontal">
+              <BarChart data={topProducts} layout="horizontal">
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis type="number" />
                 <YAxis dataKey="name" type="category" width={120} />
@@ -119,8 +153,8 @@ export function SalesAnalytics({ timeRange }: SalesAnalyticsProps) {
           <ChartContainer
             config={{
               value: {
-                label: "Percentage",
-                color: "hsl(var(--chart-1))",
+                label: 'Percentage',
+                color: 'hsl(var(--chart-1))',
               },
             }}
             className="h-[300px]"
@@ -132,7 +166,7 @@ export function SalesAnalytics({ timeRange }: SalesAnalyticsProps) {
                   cx="50%"
                   cy="50%"
                   labelLine={false}
-                  label={({ name, percent }) => `${name} ${(percent * 100).toFixed(0)}%`}
+                  label={(entry) => `${entry.name} ${Math.round((entry.value || 0))}%`}
                   outerRadius={80}
                   fill="#8884d8"
                   dataKey="value"

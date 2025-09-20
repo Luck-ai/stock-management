@@ -3,20 +3,23 @@
 import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { Switch } from "@/components/ui/switch"
 import { Badge } from "@/components/ui/badge"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { AlertTriangle, TrendingUp, Package, ShoppingCart, Loader2, RefreshCw } from "lucide-react"
 import { 
-  getLowStockProducts, 
-  getOutOfStockProducts, 
-  createPurchaseOrder, 
+  // We'll fetch all products and compute low/out-of-stock client-side
+  getProducts,
+  createPurchaseOrder,
+  createPurchaseOrdersBatch,
   getSuppliers,
   type Product, 
   type Supplier 
 } from "@/lib/api"
 import { useAppToast } from "@/lib/use-toast"
+import { isOutOfStock, isLowStock, getThreshold } from "@/lib/stock-utils"
 
 interface ReorderSuggestion {
   id: string
@@ -41,9 +44,12 @@ export function AutoReorderSuggestions({ onOrderCreated }: AutoReorderSuggestion
   const [selectedItems, setSelectedItems] = useState<string[]>([])
   const [selectAll, setSelectAll] = useState(false)
   const [suggestions, setSuggestions] = useState<ReorderSuggestion[]>([])
+  const [outCount, setOutCount] = useState<number>(0)
+  const [lowCount, setLowCount] = useState<number>(0)
   const [quantities, setQuantities] = useState<Record<string, number>>({})
   const [loading, setLoading] = useState(true)
   const [creating, setCreating] = useState(false)
+  const [notifyByEmail, setNotifyByEmail] = useState(false)
   const { push } = useAppToast()
 
   useEffect(() => {
@@ -53,13 +59,17 @@ export function AutoReorderSuggestions({ onOrderCreated }: AutoReorderSuggestion
   const loadSuggestions = async () => {
     try {
       setLoading(true)
-      const [lowStockProducts, outOfStockProducts, suppliers] = await Promise.all([
-        getLowStockProducts(),
-        getOutOfStockProducts(),
+      // Fetch all products and suppliers, then compute low/out-of-stock using the same logic
+      const [products, suppliers] = await Promise.all([
+        getProducts(),
         getSuppliers()
       ])
 
-      // Combine and process the products into suggestions
+      // Compute out-of-stock and low-stock using centralized utilities
+      const outOfStockProducts = products.filter(isOutOfStock)
+      const lowStockProducts = products.filter(p => !isOutOfStock(p) && isLowStock(p))
+
+      // Combine and dedupe
       const allProducts = [...outOfStockProducts, ...lowStockProducts]
       const uniqueProducts = allProducts.filter((product, index, self) => 
         index === self.findIndex(p => p.id === product.id)
@@ -67,19 +77,20 @@ export function AutoReorderSuggestions({ onOrderCreated }: AutoReorderSuggestion
 
       const suggestions: ReorderSuggestion[] = uniqueProducts.map(product => {
         const supplier = suppliers.find(s => s.id === product.supplier_id)
-        const isOutOfStock = product.quantity === 0
-        const priority: "critical" | "high" | "medium" = isOutOfStock ? "critical" : "high"
-        const reason = isOutOfStock ? "Out of stock" : "Below threshold"
+        const isOut = isOutOfStock(product)
+        const priority: "critical" | "high" | "medium" = isOut ? "critical" : "high"
+        const reason = isOut ? "Out of stock" : "Below threshold"
         
+        const threshold = getThreshold(product)
         // Suggest enough to reach 3x threshold or minimum 20
-        const suggestedQuantity = Math.max((product.low_stock_threshold * 3) - product.quantity, 20)
-        
+        const suggestedQuantity = Math.max((threshold * 3) - product.quantity, 20)
+
         return {
           id: product.id.toString(),
           product: product.name,
           sku: product.sku || "",
           currentStock: product.quantity,
-          threshold: product.low_stock_threshold,
+          threshold: threshold,
           suggestedQuantity,
           supplier: supplier?.name || "No Supplier",
           priority,
@@ -98,13 +109,19 @@ export function AutoReorderSuggestions({ onOrderCreated }: AutoReorderSuggestion
       })
 
       setSuggestions(suggestions)
-      
+
       // Initialize quantities with suggested amounts
       const initialQuantities: Record<string, number> = {}
       suggestions.forEach(suggestion => {
         initialQuantities[suggestion.id] = suggestion.suggestedQuantity
       })
       setQuantities(initialQuantities)
+
+  // set counts for cards based on the suggestions we just built
+  const outRowsCount = suggestions.filter(s => s.reason === 'Out of stock').length
+  const lowRowsCount = suggestions.filter(s => s.reason === 'Below threshold').length
+  setOutCount(outRowsCount)
+  setLowCount(lowRowsCount)
     } catch (error) {
       console.error('Failed to load suggestions:', error)
       push({
@@ -149,15 +166,30 @@ export function AutoReorderSuggestions({ onOrderCreated }: AutoReorderSuggestion
       setCreating(true)
       const selectedSuggestions = suggestions.filter(s => selectedItems.includes(s.id))
       
-      await Promise.all(selectedSuggestions.map(suggestion => 
-        createPurchaseOrder({
+      // If more than one order selected, use batch endpoint for a single
+      // request and single notification email when requested.
+      if (selectedSuggestions.length > 1) {
+        const batchPayload = selectedSuggestions.map(suggestion => ({
           product_id: suggestion.productId,
           supplier_id: suggestion.supplierId,
           quantity_ordered: quantities[suggestion.id] || suggestion.suggestedQuantity,
           status: "pending",
-          notes: `Auto-generated order: ${suggestion.reason}`
-        })
-      ))
+          notes: `Auto-generated order: ${suggestion.reason}`,
+          notify_by_email: notifyByEmail
+        }))
+        await createPurchaseOrdersBatch(batchPayload)
+      } else {
+        await Promise.all(selectedSuggestions.map(suggestion => 
+          createPurchaseOrder({
+            product_id: suggestion.productId,
+            supplier_id: suggestion.supplierId,
+            quantity_ordered: quantities[suggestion.id] || suggestion.suggestedQuantity,
+            status: "pending",
+            notes: `Auto-generated order: ${suggestion.reason}`,
+            notify_by_email: notifyByEmail
+          })
+        ))
+      }
 
       push({
         title: "Success",
@@ -188,7 +220,8 @@ export function AutoReorderSuggestions({ onOrderCreated }: AutoReorderSuggestion
         supplier_id: suggestion.supplierId,
         quantity_ordered: quantities[suggestion.id] || suggestion.suggestedQuantity,
         status: "pending",
-        notes: `Single order: ${suggestion.reason}`
+        notes: `Single order: ${suggestion.reason}`,
+        notify_by_email: notifyByEmail
       })
 
       push({
@@ -235,17 +268,19 @@ export function AutoReorderSuggestions({ onOrderCreated }: AutoReorderSuggestion
     }
   }
 
-  const selectedTotal = 0 // Remove total calculation since we no longer track costs
+  // removed selectedTotal (not used)
 
   return (
     <div className="space-y-4">
       {/* Action Bar */}
       <Card>
-        <CardHeader>
-          <CardTitle>Automatic Reorder Suggestions</CardTitle>
-          <CardDescription>
-            Products that are low in stock or out of stock and need reordering
-          </CardDescription>
+        <CardHeader className="flex items-start justify-between">
+          <div>
+            <CardTitle>Automatic Reorder Suggestions</CardTitle>
+          </div>
+          <div className="flex items-center space-x-4 mt-1">
+            {/* Counts moved to top-level summary in RestockManagement */}
+          </div>
         </CardHeader>
         <CardContent>
           {loading ? (
@@ -260,114 +295,118 @@ export function AutoReorderSuggestions({ onOrderCreated }: AutoReorderSuggestion
               <p className="text-sm">All products are adequately stocked</p>
             </div>
           ) : (
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <Checkbox checked={selectAll} onCheckedChange={handleSelectAll} />
-                <span className="text-sm">Select All ({suggestions.length} items)</span>
-                {selectedItems.length > 0 && <Badge variant="outline">{selectedItems.length} selected</Badge>}
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-4">
+                  <Checkbox checked={selectAll} onCheckedChange={handleSelectAll} />
+                  <span className="text-sm">Select All ({suggestions.length} items)</span>
+                  {selectedItems.length > 0 && <Badge variant="outline">{selectedItems.length} selected</Badge>}
+                </div>
+                <div className="flex items-center space-x-2">
+                  <Button onClick={loadSuggestions} variant="outline">
+                    <RefreshCw className="h-4 w-4 mr-2" />
+                    Refresh
+                  </Button>
+                  <Button 
+                    onClick={createPurchaseOrders} 
+                    disabled={selectedItems.length === 0 || creating}
+                  >
+                    {creating ? (
+                      <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                    ) : (
+                      <ShoppingCart className="h-4 w-4 mr-2" />
+                    )}
+                    Create Purchase Orders
+                  </Button>
+                  <div className="flex items-center space-x-3 px-2">
+                    <span className="text-sm">Notify by email</span>
+                    <Switch checked={notifyByEmail} onCheckedChange={(v) => setNotifyByEmail(!!v)} />
+                  </div>
+                </div>
               </div>
-              <div className="flex items-center space-x-2">
-                <Button onClick={loadSuggestions} variant="outline">
-                  <RefreshCw className="h-4 w-4 mr-2" />
-                  Refresh
-                </Button>
-                <Button 
-                  onClick={createPurchaseOrders} 
-                  disabled={selectedItems.length === 0 || creating}
-                >
-                  {creating ? (
-                    <Loader2 className="h-4 w-4 mr-2 animate-spin" />
-                  ) : (
-                    <ShoppingCart className="h-4 w-4 mr-2" />
-                  )}
-                  Create Purchase Orders
-                </Button>
+
+              {/* Suggestions Table */}
+              <div className="overflow-hidden rounded-md border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-12"></TableHead>
+                      <TableHead>Product</TableHead>
+                      <TableHead>Current Stock</TableHead>
+                      <TableHead>Suggested Qty</TableHead>
+                      <TableHead>Order Qty</TableHead>
+                      <TableHead>Supplier</TableHead>
+                      <TableHead>Priority</TableHead>
+                      <TableHead>Actions</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {suggestions.map((suggestion) => (
+                      <TableRow key={suggestion.id}>
+                        <TableCell>
+                          <Checkbox
+                            checked={selectedItems.includes(suggestion.id)}
+                            onCheckedChange={(checked) => handleSelectItem(suggestion.id, !!checked)}
+                          />
+                        </TableCell>
+                        <TableCell>
+                          <div className="flex items-center space-x-2">
+                            {getReasonIcon(suggestion.reason)}
+                            <div>
+                              <p className="font-medium">{suggestion.product}</p>
+                              <p className="text-sm text-muted-foreground">{suggestion.sku}</p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <div className="text-center">
+                            <span
+                              className={
+                                suggestion.reason === 'Out of stock'
+                                  ? "text-red-600 font-bold"
+                                  : suggestion.reason === 'Below threshold'
+                                    ? "text-yellow-600 font-medium"
+                                    : ""
+                              }
+                            >
+                              {suggestion.currentStock}
+                            </span>
+                            <p className="text-xs text-muted-foreground">/ {suggestion.threshold}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-medium">{suggestion.suggestedQuantity}</TableCell>
+                        <TableCell>
+                          <Input
+                            type="number"
+                            min="1"
+                            value={quantities[suggestion.id] || suggestion.suggestedQuantity}
+                            onChange={(e) => updateQuantity(suggestion.id, parseInt(e.target.value) || 1)}
+                            className="w-20"
+                          />
+                        </TableCell>
+                        <TableCell>{suggestion.supplier}</TableCell>
+                        <TableCell>{getPriorityBadge(suggestion.priority)}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center space-x-2">
+                            <Button size="sm" variant="outline">
+                              Edit
+                            </Button>
+                            <Button size="sm" onClick={() => createSingleOrder(suggestion)}>
+                              Order
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
               </div>
             </div>
           )}
         </CardContent>
       </Card>
 
-      {/* Suggestions Table */}
-      {!loading && suggestions.length > 0 && (
-        <Card>
-          <CardContent className="p-0">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="w-12"></TableHead>
-                  <TableHead>Product</TableHead>
-                  <TableHead>Current Stock</TableHead>
-                  <TableHead>Suggested Qty</TableHead>
-                  <TableHead>Order Qty</TableHead>
-                  <TableHead>Supplier</TableHead>
-                  <TableHead>Priority</TableHead>
-                  <TableHead>Actions</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {suggestions.map((suggestion) => (
-                  <TableRow key={suggestion.id}>
-                    <TableCell>
-                      <Checkbox
-                        checked={selectedItems.includes(suggestion.id)}
-                        onCheckedChange={(checked) => handleSelectItem(suggestion.id, !!checked)}
-                      />
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-2">
-                        {getReasonIcon(suggestion.reason)}
-                        <div>
-                          <p className="font-medium">{suggestion.product}</p>
-                          <p className="text-sm text-muted-foreground">{suggestion.sku}</p>
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell>
-                      <div className="text-center">
-                        <span
-                          className={
-                            suggestion.currentStock === 0
-                              ? "text-red-600 font-bold"
-                              : suggestion.currentStock <= suggestion.threshold
-                                ? "text-yellow-600 font-medium"
-                                : ""
-                          }
-                        >
-                          {suggestion.currentStock}
-                        </span>
-                        <p className="text-xs text-muted-foreground">/ {suggestion.threshold}</p>
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-medium">{suggestion.suggestedQuantity}</TableCell>
-                    <TableCell>
-                      <Input
-                        type="number"
-                        min="1"
-                        value={quantities[suggestion.id] || suggestion.suggestedQuantity}
-                        onChange={(e) => updateQuantity(suggestion.id, parseInt(e.target.value) || 1)}
-                        className="w-20"
-                      />
-                    </TableCell>
-                    <TableCell>{suggestion.supplier}</TableCell>
-                    <TableCell>{getPriorityBadge(suggestion.priority)}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-2">
-                        <Button size="sm" variant="outline">
-                          Edit
-                        </Button>
-                        <Button size="sm" onClick={() => createSingleOrder(suggestion)}>
-                          Order
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          </CardContent>
-        </Card>
-      )}
+      {/* Table merged into the action Card above */}
     </div>
   )
 }

@@ -55,31 +55,33 @@ export function SalesChart({ productId, salesData: propSalesData, refreshTrigger
   const transformSalesData = (sales: SalesRecord[]) => {
     if (!sales || sales.length === 0) return []
     
-    // Group sales by month
-    const monthlyData: { [key: string]: { sales: number, revenue: number, monthNumber: number } } = {}
-    
+    // Group sales by year-month (YYYY-MM) to avoid mixing the same month across years
+    const monthlyData: { [key: string]: { sales: number; revenue: number; yearMonth: string; monthIndex: number } } = {}
+
     sales.forEach(sale => {
       const date = new Date(sale.sale_date)
-      const monthKey = date.toLocaleDateString('en-US', { month: 'short' })
-      const monthNumber = date.getMonth() // 0-11 for sorting
-      
-      if (!monthlyData[monthKey]) {
-        monthlyData[monthKey] = { sales: 0, revenue: 0, monthNumber }
+      const year = date.getFullYear()
+      const month = date.getMonth() + 1 // 1-12
+      const monthIndex = year * 100 + month // sortable index like 202509
+      const key = `${year}-${String(month).padStart(2, '0')}` // e.g. 2025-09
+
+      if (!monthlyData[key]) {
+        monthlyData[key] = { sales: 0, revenue: 0, yearMonth: key, monthIndex }
       }
-      
-      monthlyData[monthKey].sales += sale.quantity
-      monthlyData[monthKey].revenue += sale.quantity * sale.sale_price
+
+      monthlyData[key].sales += sale.quantity
+      monthlyData[key].revenue += sale.quantity * sale.sale_price
     })
-    
-    // Convert to chart format and sort by month order
-    return Object.entries(monthlyData)
-      .map(([month, data]) => ({
-        month,
+
+    // Convert to chart format and sort by yearMonth
+    return Object.values(monthlyData)
+      .map(data => ({
+        month: data.yearMonth,
         sales: data.sales,
         revenue: Math.round(data.revenue * 100) / 100,
-        monthNumber: data.monthNumber
+        monthIndex: data.monthIndex
       }))
-      .sort((a, b) => a.monthNumber - b.monthNumber)
+      .sort((a, b) => a.monthIndex - b.monthIndex)
   }
   
   // Use provided salesData or fetched data

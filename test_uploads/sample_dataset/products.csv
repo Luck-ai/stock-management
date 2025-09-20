@@ -1,0 +1,6 @@
+name,sku,category,description,price,quantity,low_stock_threshold,supplier
+Green Tea,BEV-004,Beverages,Organic green tea bags,199,150,20,Fresh Farms
+Trail Mix,SNK-005,Snacks,Mixed nuts and dried fruit,249,85,15,Snack Corp
+Olive Oil,PAN-004,Pantry,Extra virgin olive oil 500ml,1299,60,10,Pantry Pro
+Bluetooth Speaker,ELC-004,Electronics,Portable Bluetooth speaker,3499,35,5,Gadget House
+Face Mask,PER-003,Personal Care,Disposable face masks (50pcs),999,200,50,Personal Care Inc

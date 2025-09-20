@@ -2,13 +2,15 @@
 
 import Link from "next/link"
 import { useState, useEffect } from "react"
-import { Eye, Edit, Trash2, AlertTriangle, Package, DollarSign, Filter } from "lucide-react"
+import { Eye, Edit, Trash2, AlertTriangle, Package, DollarSign, Filter, Plus, Upload } from "lucide-react"
+import { useAppToast } from '@/lib/use-toast'
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { UnifiedTable, TableColumn, TableAction } from "./unified-table"
 import { apiFetch } from "@/lib/api"
 import type { Product } from "./stock-management"
+import { getStockStatus, getProductStockStatus, getStockStatusClasses } from "@/lib/stock-utils"
 
 interface ProductTableProps {
   products?: Product[]
@@ -16,6 +18,8 @@ interface ProductTableProps {
   onDelete?: (id: string, name?: string) => void
   categories?: string[]
   searchTerm?: string
+  // Optional external control for stock status filter: 'All' | 'In Stock' | 'Low Stock' | 'Out of Stock'
+  stockFilter?: string
 }
 
 export function ProductTable({ 
@@ -24,25 +28,24 @@ export function ProductTable({
   onDelete, 
   categories,
   searchTerm = ""
+  , stockFilter
 }: ProductTableProps) {
+  const { push: pushToast } = useAppToast()
   const [fetchedProducts, setFetchedProducts] = useState<Product[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [selectedCategory, setSelectedCategory] = useState<string>('All')
   const [selectedStockStatus, setSelectedStockStatus] = useState<string>('All')
 
-  const getStockStatus = (quantity: number, threshold: number) => {
-    if (!threshold || threshold <= 0) {
-      if (quantity === 0) return { label: "Out of Stock", variant: "destructive" as const }
-      return { label: "In Stock", variant: "default" as const }
+  // If parent provides a stockFilter prop, keep our internal selection in sync
+  useEffect(() => {
+    if (stockFilter !== undefined && stockFilter !== selectedStockStatus) {
+      setSelectedStockStatus(stockFilter)
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stockFilter])
 
-    const margin = Math.ceil(threshold * 0.2) 
 
-    if (quantity < threshold) return { label: "Out of Stock", variant: "destructive" as const }
-    if (Math.abs(threshold - quantity) <= margin) return { label: "Low Stock", variant: "secondary" as const }
-    return { label: "In Stock", variant: "default" as const }
-  }
 
   const formatDateOnly = (val?: string) => {
     if (!val) return ''
@@ -75,29 +78,14 @@ export function ProductTable({
           const text = await res.text()
           throw new Error(`Failed to fetch products: ${res.status} ${text}`)
         }
-        const data = await res.json()
+  const data = await res.json()
         if (!active) return
         
-        const mapped: Product[] = Array.isArray(data)
-          ? data.map((p: any) => ({
-              id: String(p.id ?? ""),
-              name: p.name ?? "",
-              sku: p.sku ?? "",
-              category: p.category?.name ?? p.category ?? "",
-              description: p.description ?? "",
-              quantity: Number(p.quantity ?? 0),
-              price: Number(p.price ?? 0),
-              lowStockThreshold: Number(p.low_stock_threshold ?? 0),
-              statusLabel: p.status ?? p.quantity_warning_label ?? undefined,
-              statusVariant: p.quantity_warning_variant ?? undefined,
-              isLowStockFlag: typeof p.is_low_stock === 'boolean' ? p.is_low_stock : undefined,
-              supplier: p.supplier?.name ?? p.supplier ?? "",
-              lastUpdated: p.last_updated ?? p.lastUpdated ?? "",
-            }))
-          : []
-        setFetchedProducts(mapped)
+        import("@/lib/response-mappers").then(({ normalizeProduct }) => {
+          const mapped: Product[] = Array.isArray(data) ? data.map((p: any) => normalizeProduct(p)) : []
+          setFetchedProducts(mapped)
+        })
       } catch (err: any) {
-        console.error(err)
         if (active) setError(err.message || String(err))
       } finally {
         if (active) setLoading(false)
@@ -269,7 +257,6 @@ export function ProductTable({
                 ))}
               </SelectContent>
             </Select>
-          </div>
           <div className="flex items-center space-x-2">
             <span className="text-sm font-medium">Stock Status</span>
             <Select value={selectedStockStatus} onValueChange={setSelectedStockStatus}>
@@ -283,6 +270,7 @@ export function ProductTable({
                 <SelectItem value="Out of Stock">Out of Stock</SelectItem>
               </SelectContent>
             </Select>
+          </div>
           </div>
         </div>
       </div>

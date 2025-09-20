@@ -6,8 +6,9 @@ import { Button } from "@/components/ui/button"
 import { Settings, RefreshCw, Plus, Download, History } from "lucide-react"
 import { AutoReorderSuggestions } from "./auto-reorder-suggestions"
 import { PurchaseOrders } from "./purchase-orders"
-import { getRestockSummary, type RestockSummary } from "@/lib/api"
+import { getRestockSummary, getProducts, type RestockSummary } from "@/lib/api"
 import { useAppToast } from "@/lib/use-toast"
+import { getStockCounts } from "@/lib/stock-utils"
 
 export function RestockManagement() {
   const [showHistory, setShowHistory] = useState(false)
@@ -27,8 +28,15 @@ export function RestockManagement() {
   const loadSummary = async () => {
     try {
       setLoading(true)
-      const data = await getRestockSummary()
-      setSummary(data)
+      const [summaryData, products] = await Promise.all([getRestockSummary(), getProducts()])
+      // compute totals from products to ensure summary cards match the product state
+      const stockCounts = getStockCounts(products)
+
+      setSummary({
+        ...summaryData,
+        out_of_stock_items: stockCounts.outOfStock,
+        low_stock_items: stockCounts.lowStock,
+      })
     } catch (error) {
       console.error('Failed to load restock summary:', error)
       push({

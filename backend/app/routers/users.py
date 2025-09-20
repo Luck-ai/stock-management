@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, BackgroundTasks
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import List
@@ -7,11 +7,8 @@ from ..database import get_db
 import hashlib
 import logging
 from ..security import create_access_token
-from datetime import timedelta
+from datetime import timedelta, datetime, timezone
 import secrets
-from datetime import datetime, timezone
-from fastapi import BackgroundTasks
-from .. import schemas
 from ..routers.email import send_verification_email_sync
 
 router = APIRouter(prefix="/users", tags=["users"])

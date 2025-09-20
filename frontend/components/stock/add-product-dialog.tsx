@@ -5,8 +5,7 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { apiFetch } from '@/lib/api'
-import { Upload } from "lucide-react"
-import { useAppToast } from '@/lib/use-toast'
+import { normalizeProduct } from '@/lib/response-mappers'
 import {
   Dialog,
   DialogContent,
@@ -30,7 +29,6 @@ interface AddProductDialogProps {
 }
 
 export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSuppliers, categories: propCategories, onRefresh }: AddProductDialogProps) {
-  const { push: pushToast } = useAppToast()
   const [formData, setFormData] = useState({
     name: "",
     sku: "",
@@ -192,27 +190,17 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
       }
 
       const created = await res.json()
-      // find supplier & category names for local UI shape
-      // Determine supplier & category names for local UI shape.
-      // Prefer the backend's returned nested object or value, then our resolved id lookups,
-      // and finally fall back to the user's original form input (so UI shows what the user selected).
-      const supplierName =
-        (created.supplier && (created.supplier.name ?? String(created.supplier))) ||
-        (supplier_id ? suppliers.find((s) => s.id === supplier_id)?.name ?? "" : formData.supplierId || "")
-      const categoryName =
-        (created.category && (created.category.name ?? String(created.category))) ||
-        (category_id ? categories.find((c) => c.id === category_id)?.name ?? "" : formData.category || "")
-
-      // call parent onAdd with the product data in the shape it expects
+      // Normalize backend product shape into the UI Product shape and pass to parent
+      const normalized = normalizeProduct(created)
       onAdd({
-        name: created.name ?? payload.name,
-        sku: created.sku ?? payload.sku ?? "",
-        category: categoryName || "",
-        description: created.description ?? payload.description ?? "",
-        quantity: created.quantity ?? payload.quantity,
-        price: created.price ?? payload.price,
-        lowStockThreshold: created.low_stock_threshold ?? payload.low_stock_threshold,
-        supplier: supplierName || "",
+        name: normalized.name,
+        sku: normalized.sku,
+        category: normalized.category,
+        description: normalized.description,
+        quantity: normalized.quantity,
+        price: normalized.price,
+        lowStockThreshold: normalized.lowStockThreshold,
+        supplier: normalized.supplier,
       })
 
       // Reset form
@@ -376,70 +364,7 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
             {/* supplier/category creation moved to dashboard */}
           </div>
           <div className="pt-2 mb-6">
-            <h3 className="text-sm font-medium">Bulk import</h3>
-            <p className="text-xs text-muted-foreground mb-2">Import multiple products via CSV (headers: name, sku, category_id, description, price, quantity, low_stock_threshold, supplier_id)</p>
-            <div className="flex gap-2">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => {
-                  const input = document.createElement('input')
-                  input.type = 'file'
-                  input.accept = '.csv'
-                  input.onchange = async (e) => {
-                    const file = (e.target as HTMLInputElement).files?.[0]
-                    if (!file) return
-                    
-                    setIsUploadingProducts(true)
-                    try {
-                      const formData = new FormData()
-                      formData.append('file', file)
-                      
-                      const res = await apiFetch('/products/upload', {
-                        method: 'POST',
-                        body: formData
-                      })
-                      
-                      if (res.ok) {
-                        const result = await res.json()
-                        pushToast({
-                          title: "Success",
-                          description: `Successfully uploaded products!`,
-                          variant: "success"
-                        })
-                        
-                        // Close dialog and refresh data
-                        onOpenChange(false)
-                        if (onRefresh) {
-                          onRefresh()
-                        }
-                      } else {
-                        const errorData = await res.json().catch(() => ({ detail: 'Unknown error' }))
-                        pushToast({
-                          title: "Upload Failed",
-                          description: errorData.detail || 'Unknown error occurred',
-                          variant: "error"
-                        })
-                      }
-                    } catch (err) {
-                      console.error('Error uploading products:', err)
-                      pushToast({
-                        title: "Error",
-                        description: "Failed to upload products",
-                        variant: "error"
-                      })
-                    } finally {
-                      setIsUploadingProducts(false)
-                    }
-                  }
-                  input.click()
-                }}
-                disabled={isUploadingProducts}
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                {isUploadingProducts ? 'Uploading...' : 'Import CSV'}
-              </Button>
-            </div>
+            {/* Upload handled from the Inventory header; keep this area for contextual info or future UI */}
           </div>
           <DialogFooter>
             <Button type="submit">Add Product</Button>

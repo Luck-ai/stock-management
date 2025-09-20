@@ -4,8 +4,11 @@ from sqlalchemy.ext.asyncio import AsyncEngine
 from . import crud, models, schemas
 from .database import engine, Base, get_db
 from .routers import products, suppliers, product_categories, product_sales, users, email, restock
+import os
 
-app = FastAPI(title="Stock Management API", debug=True)
+# Use debug mode only in development
+debug_mode = os.getenv("DEBUG", "false").lower() == "true"
+app = FastAPI(title="Stock Management API", debug=debug_mode)
 
 
 @app.on_event("startup")

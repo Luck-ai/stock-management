@@ -7,6 +7,26 @@ from typing import List, Optional
 from datetime import datetime
 
 
+async def get_category_by_name(db: AsyncSession, name: str, user_id: int) -> Optional[models.ProductCategory]:
+    """Get category by name for a specific user"""
+    stmt = select(models.ProductCategory).where(
+        models.ProductCategory.name == name,
+        models.ProductCategory.user_id == user_id
+    )
+    result = await db.execute(stmt)
+    return result.scalars().first()
+
+
+async def get_supplier_by_name(db: AsyncSession, name: str, user_id: int) -> Optional[models.Supplier]:
+    """Get supplier by name for a specific user"""
+    stmt = select(models.Supplier).where(
+        models.Supplier.name == name,
+        models.Supplier.user_id == user_id
+    )
+    result = await db.execute(stmt)
+    return result.scalars().first()
+
+
 async def record_stock_movement_crud(
     db: AsyncSession,
     product: models.Product,
@@ -43,6 +63,17 @@ async def record_stock_movement_crud(
     return movement
 
 
+async def get_product_by_sku(db: AsyncSession, sku: str, user_id: Optional[int] = None) -> Optional[models.Product]:
+    """Lookup a product by SKU. If user_id provided, scope lookup to that user."""
+    if not sku:
+        return None
+    stmt = select(models.Product).where(models.Product.sku == sku)
+    if user_id is not None:
+        stmt = stmt.where(models.Product.user_id == user_id)
+    result = await db.execute(stmt)
+    return result.scalars().first()
+
+
 async def get_product(db: AsyncSession, product_id: int, user_id: Optional[int] = None) -> Optional[models.Product]:
     stmt = select(models.Product).where(models.Product.id == product_id)
     if user_id is not None:
@@ -69,13 +100,17 @@ async def get_products(db: AsyncSession, skip: int = 0, limit: int = 100, user_i
 
 async def create_product(db: AsyncSession, product: schemas.ProductCreate) -> models.Product:
     data = product.model_dump()
-    # Prevent inserting duplicate SKUs by checking existence first
+    # Prevent inserting duplicate SKUs by checking existence first (user-scoped)
     sku = data.get("sku")
-    if sku:
-        stmt = select(models.Product).where(models.Product.sku == sku)
+    user_id = data.get("user_id")
+    if sku and user_id:
+        stmt = select(models.Product).where(
+            models.Product.sku == sku,
+            models.Product.user_id == user_id
+        )
         result = await db.execute(stmt)
         if result.scalars().first():
-            raise ValueError("SKU already exists")
+            raise ValueError("SKU already exists for this user")
     db_product = models.Product(**data)
     db.add(db_product)
     try:
@@ -87,7 +122,7 @@ async def create_product(db: AsyncSession, product: schemas.ProductCreate) -> mo
         msg = str(e.orig) if getattr(e, 'orig', None) else str(e)
         # surface SKU-specific messages as before
         if 'sku' in msg.lower():
-            raise ValueError("SKU already exists")
+            raise ValueError("SKU already exists for this user")
         # include original DB message to aid debugging (safe in dev)
         raise ValueError(f"Database integrity error: {msg}")
     # reload with selectinload to ensure relationships accessible without IO
@@ -187,14 +222,18 @@ async def update_product(db: AsyncSession, product_id: int, updates: schemas.Pro
         result = await db.execute(stmt)
         if not result.scalars().first():
             raise ValueError('Invalid category_id')
-    # If SKU is being changed/added, ensure uniqueness across other products
+    # If SKU is being changed/added, ensure uniqueness across other products for this user
     if "sku" in updated_items:
         new_sku = updated_items.get("sku")
         if new_sku:
-            stmt = select(models.Product).where(models.Product.sku == new_sku, models.Product.id != product_id)
+            stmt = select(models.Product).where(
+                models.Product.sku == new_sku, 
+                models.Product.id != product_id,
+                models.Product.user_id == user_id
+            )
             result = await db.execute(stmt)
             if result.scalars().first():
-                raise ValueError("SKU already exists")
+                raise ValueError("SKU already exists for this user")
     
     # Apply updates to the product
     for k, v in updated_items.items():
@@ -223,7 +262,7 @@ async def update_product(db: AsyncSession, product_id: int, updates: schemas.Pro
         await db.rollback()
         msg = str(e.orig) if getattr(e, 'orig', None) else str(e)
         if 'sku' in msg.lower():
-            raise ValueError("SKU already exists")
+            raise ValueError("SKU already exists for this user")
         raise ValueError(f"Database integrity error: {msg}")
     stmt = select(models.Product).where(models.Product.id == db_product.id).options(
         selectinload(models.Product.supplier),

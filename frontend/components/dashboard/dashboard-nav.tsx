@@ -12,7 +12,7 @@ const navItems = [
     icon: Home,
   },
   {
-    title: "Stock Management",
+    title: "Products",
     href: "/dashboard/stock",
     icon: Warehouse,
   },
@@ -32,7 +32,7 @@ export function DashboardNav() {
   const pathname = usePathname()
 
   return (
-    <nav className="w-64 border-r border-sidebar-border bg-sidebar backdrop-blur supports-[backdrop-filter]:bg-sidebar/90">
+    <nav className="w-54 border-r border-sidebar-border bg-sidebar backdrop-blur supports-[backdrop-filter]:bg-sidebar/90">
       <div className="p-4">
         <div className="space-y-1">
           {navItems.map((item) => {

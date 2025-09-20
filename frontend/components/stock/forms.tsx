@@ -6,8 +6,7 @@ import { apiFetch } from '@/lib/api'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Upload } from "lucide-react"
-import { useAppToast } from '@/lib/use-toast'
+// Uploads are handled from the Inventory header; remove toast/upload state here
 import {
   Dialog,
   DialogContent,
@@ -34,9 +33,7 @@ export function SupplierForm({
   initial?: { id?: number; name?: string; email?: string; phone?: string; address?: string }
   onUpdate?: (updated: any) => void
 }) {
-  const { push: pushToast } = useAppToast()
   const [form, setForm] = useState({ name: "", email: "", phone: "", address: "" })
-  const [isUploadingSuppliers, setIsUploadingSuppliers] = useState(false)
 
   useEffect(() => {
     if (initial) {
@@ -89,69 +86,7 @@ export function SupplierForm({
         </DialogHeader>
         <div className="grid grid-cols-1 gap-4">
           <div className="pt-0 md:col-span-1">
-            <h3 className="text-sm font-medium">Bulk import</h3>
-            <p className="text-xs text-muted-foreground mb-2">Upload a CSV of suppliers (headers: name, email, phone, address)</p>
-            <div className="flex gap-2">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => {
-                  const input = document.createElement('input')
-                  input.type = 'file'
-                  input.accept = '.csv'
-                  input.onchange = async (e) => {
-                    const file = (e.target as HTMLInputElement).files?.[0]
-                    if (!file) return
-                    
-                    setIsUploadingSuppliers(true)
-                    try {
-                      const formData = new FormData()
-                      formData.append('file', file)
-                      
-                      const res = await apiFetch('/suppliers/upload', {
-                        method: 'POST',
-                        body: formData
-                      })
-                      
-                      if (res.ok) {
-                        const result = await res.json()
-                        pushToast({
-                          title: "Success",
-                          description: `Successfully uploaded suppliers!`,
-                          variant: "success"
-                        })
-                        
-                        // Refresh data if onUpdate callback is available
-                        if (onUpdate) {
-                          onUpdate(result)
-                        }
-                      } else {
-                        const errorData = await res.json().catch(() => ({ detail: 'Unknown error' }))
-                        pushToast({
-                          title: "Upload Failed",
-                          description: errorData.detail || 'Unknown error occurred',
-                          variant: "error"
-                        })
-                      }
-                    } catch (err) {
-                      console.error('Error uploading suppliers:', err)
-                      pushToast({
-                        title: "Error",
-                        description: "Failed to upload suppliers",
-                        variant: "error"
-                      })
-                    } finally {
-                      setIsUploadingSuppliers(false)
-                    }
-                  }
-                  input.click()
-                }}
-                disabled={isUploadingSuppliers}
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                {isUploadingSuppliers ? 'Uploading...' : 'Import CSV'}
-              </Button>
-            </div>
+            {/* Upload handled from the Inventory header; keep this column for layout if needed */}
           </div>
           <form onSubmit={handleSubmit} className="space-y-3">
             <div>
@@ -199,9 +134,7 @@ export function CategoryForm({
   initial?: { id?: number; name?: string; description?: string }
   onUpdate?: (updated: any) => void
 }) {
-  const { push: pushToast } = useAppToast()
   const [form, setForm] = useState({ name: "", description: "" })
-  const [isUploadingCategories, setIsUploadingCategories] = useState(false)
 
   useEffect(() => {
     if (initial) {
@@ -248,69 +181,7 @@ export function CategoryForm({
         </DialogHeader>
         <div className="grid grid-cols-1 gap-4">
           <div className="pt-0 md:col-span-1">
-            <h3 className="text-sm font-medium">Bulk import</h3>
-            <p className="text-xs text-muted-foreground mb-2">Upload a CSV of categories (headers: name, description)</p>
-            <div className="flex gap-2">
-              <Button 
-                variant="outline" 
-                size="sm" 
-                onClick={() => {
-                  const input = document.createElement('input')
-                  input.type = 'file'
-                  input.accept = '.csv'
-                  input.onchange = async (e) => {
-                    const file = (e.target as HTMLInputElement).files?.[0]
-                    if (!file) return
-                    
-                    setIsUploadingCategories(true)
-                    try {
-                      const formData = new FormData()
-                      formData.append('file', file)
-                      
-                      const res = await apiFetch('/categories/upload', {
-                        method: 'POST',
-                        body: formData
-                      })
-                      
-                      if (res.ok) {
-                        const result = await res.json()
-                        pushToast({
-                          title: "Success",
-                          description: `Successfully uploaded categories!`,
-                          variant: "success"
-                        })
-                        
-                        // Refresh data if onUpdate callback is available
-                        if (onUpdate) {
-                          onUpdate(result)
-                        }
-                      } else {
-                        const errorData = await res.json().catch(() => ({ detail: 'Unknown error' }))
-                        pushToast({
-                          title: "Upload Failed",
-                          description: errorData.detail || 'Unknown error occurred',
-                          variant: "error"
-                        })
-                      }
-                    } catch (err) {
-                      console.error('Error uploading categories:', err)
-                      pushToast({
-                        title: "Error",
-                        description: "Failed to upload categories",
-                        variant: "error"
-                      })
-                    } finally {
-                      setIsUploadingCategories(false)
-                    }
-                  }
-                  input.click()
-                }}
-                disabled={isUploadingCategories}
-              >
-                <Upload className="h-4 w-4 mr-2" />
-                {isUploadingCategories ? 'Uploading...' : 'Import CSV'}
-              </Button>
-            </div>
+            {/* Upload handled from the Inventory header; keep this column for layout if needed */}
           </div>
           <form onSubmit={handleSubmit} className="space-y-3">
             <div>

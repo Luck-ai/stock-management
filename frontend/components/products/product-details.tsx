@@ -13,6 +13,7 @@ import { StockMovementChart } from "./stock-movement-chart"
 import { EditProductDialog } from "@/components/stock/edit-product-dialog"
 import { AddSaleDialog } from "./add-sale-dialog"
 import { apiFetch } from '@/lib/api'
+import { normalizeProduct } from '@/lib/response-mappers'
 import { useAppToast } from '@/lib/use-toast'
 import type { Product } from "@/components/stock/stock-management"
 
@@ -62,28 +63,14 @@ export function ProductDetails({ productId }: ProductDetailsProps) {
       }
       
       const data = await res.json()
-      
-      // Direct mapping now that backend returns nested category & supplier objects
-      const categoryName = data.category?.name ?? (typeof data.category === 'string' ? data.category : '') ?? ''
-      const mappedProduct: Product = {
-        id: String(data.id ?? ""),
-        name: data.name ?? "",
-        sku: data.sku ?? "",
-        category: categoryName,
-        description: data.description ?? "",
-        quantity: Number(data.quantity ?? 0),
-        price: Number(data.price ?? 0),
-        lowStockThreshold: Number(data.low_stock_threshold ?? data.lowStockThreshold ?? 0),
-        supplier: data.supplier?.name ?? data.supplier ?? "",
-        lastUpdated: data.last_updated ?? data.lastUpdated ?? "",
-      }
-      
-      setProduct(mappedProduct)
-      
+
+      const normalized = normalizeProduct(data)
+      setProduct(normalized)
+
       // Fetch sales data and stock movements for this product
       await Promise.all([
-
-        fetchStockMovements(mappedProduct.id)
+        // use the normalized product id
+        fetchStockMovements(normalized.id)
       ])
     } catch (err: any) {
       console.error('Error fetching product:', err)

@@ -38,8 +38,9 @@ async def update_category(category_id: int, updates: schemas.ProductCategoryCrea
 @router.post("/", response_model=schemas.ProductCategoryOut)
 async def create_category(cat: schemas.ProductCategoryCreate, db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     # enforce ownership from the authenticated token rather than trusting client-supplied user_id
+    user_id = current_user.id
     data = cat.model_dump()
-    data['user_id'] = current_user.id
+    data['user_id'] = user_id
     c_schema = schemas.ProductCategoryCreate.model_validate(data)
     try:
         return await crud.create_category(db, c_schema)
@@ -55,7 +56,9 @@ async def list_categories(db: AsyncSession = Depends(get_db), current_user: mode
 @router.post("/upload")
 async def upload_categories_csv(file: UploadFile = File(...), db: AsyncSession = Depends(get_db), current_user: models.User = Depends(get_current_user)):
     """Upload a CSV file with category rows. Expected headers: name, description"""
-
+    
+    # Capture user_id early to avoid async context issues
+    user_id = current_user.id
 
     try:
         raw = await file.read()
@@ -72,7 +75,7 @@ async def upload_categories_csv(file: UploadFile = File(...), db: AsyncSession =
     for row in reader:
         row_no += 1
         data = {k: (v if v != '' else None) for k, v in row.items()}
-        data['user_id'] = current_user.id
+        data['user_id'] = user_id
         try:
             c_schema = schemas.ProductCategoryCreate.model_validate(data)
         except Exception as e:
@@ -80,7 +83,7 @@ async def upload_categories_csv(file: UploadFile = File(...), db: AsyncSession =
             continue
         try:
             created = await crud.create_category(db, c_schema)
-            results.append({"row": row_no, "ok": True, "category_id": created.id, "user_id": created.user_id})
+            results.append({"row": row_no, "ok": True, "category_id": created.id, "user_id": user_id})
         except ValueError as e:
             results.append({"row": row_no, "ok": False, "error": str(e)})
         except Exception as e:

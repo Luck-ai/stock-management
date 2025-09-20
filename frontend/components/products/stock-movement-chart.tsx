@@ -40,10 +40,10 @@ export function StockMovementChart({ productId, stockMovements: propStockMovemen
     }
   }
 
-  // Transform movements into chart data
+  // Transform movements into chart data using numeric timestamps (ms) for X axis
   const transformToChartData = (movements: any[]) => {
     if (!movements || movements.length === 0) return []
-    
+
     // Sort by transaction_date (actual transaction date) or fall back to created_at
     const sortedMovements = movements
       .slice()
@@ -52,27 +52,30 @@ export function StockMovementChart({ productId, stockMovements: propStockMovemen
         const dateB = new Date(b.transaction_date || b.created_at).getTime()
         return dateA - dateB
       })
-    
-    // Debug: Log the movements to console for verification
-    console.log('Stock movements (chronological order):', sortedMovements.map(m => ({
-      transactionDate: m.transaction_date,
-      createdAt: m.created_at,
-      type: m.movement_type,
-      change: m.quantity_change,
-      before: m.quantity_before,
-      after: m.quantity_after
-    })))
-    
-    return sortedMovements.map(movement => {
+
+    return sortedMovements.map((movement, i) => {
       // Use transaction_date if available, otherwise fall back to created_at
       const displayDate = movement.transaction_date || movement.created_at
+      const ts = new Date(displayDate).getTime()
+
+      // Ensure numeric values (some APIs may return strings)
+      const quantityAfter = Number(movement.quantity_after ?? movement.quantity)
+      const quantityChange = Number(movement.quantity_change ?? 0)
+
       return {
-        date: new Date(displayDate).toLocaleDateString(),
-        time: new Date(displayDate).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        stock: movement.quantity_after,
-        change: movement.quantity_change,
+        // numeric timestamp for accurate charting
+        // sequential index so chart is linear (evenly spaced)
+        index: i,
+        timestamp: ts,
+        // human-friendly labels used by tooltip only
+        date: new Date(ts).toLocaleDateString(),
+        time: new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        stock: Number.isFinite(quantityAfter) ? quantityAfter : 0,
+        change: Number.isFinite(quantityChange) ? quantityChange : 0,
         type: movement.movement_type,
-        fullDate: displayDate
+        fullDate: displayDate,
+        // preserve raw for table usage elsewhere
+        raw: movement
       }
     })
   }
@@ -97,7 +100,14 @@ export function StockMovementChart({ productId, stockMovements: propStockMovemen
 
   const chartData = transformToChartData(movements)
   // For recent movements table, show newest first
-  const recentMovements = movements.slice(0, 10) // Show last 10 movements (already in desc order from API)
+  const recentMovements = movements
+    .slice()
+    .sort((a, b) => {
+      const dateA = new Date(b.transaction_date || b.created_at).getTime()
+      const dateB = new Date(a.transaction_date || a.created_at).getTime()
+      return dateA - dateB
+    })
+    .slice(0, 10)
 
   if (loading) {
     return (
@@ -119,6 +129,7 @@ export function StockMovementChart({ productId, stockMovements: propStockMovemen
   }
   return (
     <div className="space-y-4">
+      
       <Card>
         <CardHeader>
           <CardTitle>Stock Level History</CardTitle>
@@ -136,41 +147,51 @@ export function StockMovementChart({ productId, stockMovements: propStockMovemen
           >
             <ResponsiveContainer width="100%" height="100%">
               <LineChart data={chartData}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="date" />
-                <YAxis />
+                  <CartesianGrid strokeDasharray="3 3" />
+                  {/* Use sequential index for X axis so the line is evenly spaced (linear) */}
+                  <XAxis
+                    dataKey="index"
+                    type="number"
+                    domain={[0, "dataMax"]}
+                    tickFormatter={(val: number) => {
+                      const idx = Math.max(0, Math.min(Math.round(Number(val)), chartData.length - 1))
+                      return chartData[idx]?.date ?? ""
+                    }}
+                  />
+                  <YAxis />
                 <ChartTooltip 
                   content={({ active, payload, label }) => {
                     if (active && payload && payload.length) {
-                      const data = payload[0].payload
-                      return (
-                        <div className="bg-background border border-border rounded-lg p-3 shadow-lg">
-                          <p className="font-medium">{label}</p>
-                          <p className="text-sm text-muted-foreground">{data.time}</p>
-                          <div className="flex items-center gap-2 mt-1">
-                            <div className="w-3 h-3 rounded-full bg-chart-3" />
-                            <span className="text-sm">Stock Level: {data.stock}</span>
+                        const data = payload[0].payload
+
+                        return (
+                          <div className="bg-background border border-border rounded-lg p-3 shadow-lg">
+                            <p className="font-medium">{new Date(data.timestamp).toLocaleString()}</p>
+                            <p className="text-sm text-muted-foreground">{data.time}</p>
+                            <div className="flex items-center gap-2 mt-1">
+                              <div className="w-3 h-3 rounded-full bg-chart-3" />
+                              <span className="text-sm">Stock Level: {data.stock}</span>
+                            </div>
+                            <p className="text-sm mt-1">
+                              <span className={`font-medium ${data.change > 0 ? 'text-green-600' : 'text-red-600'}`}>
+                                {data.change > 0 ? '+' : ''}{data.change}
+                              </span>
+                              <span className="text-muted-foreground ml-1">({data.type})</span>
+                            </p>
                           </div>
-                          <p className="text-sm mt-1">
-                            <span className={`font-medium ${data.change > 0 ? 'text-green-600' : 'text-red-600'}`}>
-                              {data.change > 0 ? '+' : ''}{data.change}
-                            </span>
-                            <span className="text-muted-foreground ml-1">({data.type})</span>
-                          </p>
-                        </div>
-                      )
+                        )
                     }
                     return null
                   }}
                 />
-                <Line 
-                  type="monotone" 
-                  dataKey="stock" 
-                  stroke="var(--color-chart-3)" 
-                  strokeWidth={2}
-                  dot={{ fill: "var(--color-chart-3)", strokeWidth: 2, r: 4 }}
-                  activeDot={{ r: 6, stroke: "var(--color-chart-3)", strokeWidth: 2 }}
-                />
+                  <Line
+                    type="monotone"
+                    dataKey="stock"
+                    stroke="var(--color-chart-3)"
+                    strokeWidth={2}
+                    dot={{ fill: "var(--color-chart-3)", strokeWidth: 2, r: 4 }}
+                    activeDot={{ r: 6, stroke: "var(--color-chart-3)", strokeWidth: 2 }}
+                  />
               </LineChart>
             </ResponsiveContainer>
           </ChartContainer>

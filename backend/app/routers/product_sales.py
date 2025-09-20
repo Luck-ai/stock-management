@@ -4,7 +4,7 @@ from typing import List, Optional
 import csv
 import io
 from datetime import datetime
-from .. import models, schemas
+from .. import models, schemas, crud
 from ..database import get_db
 from ..security import get_current_user
 from sqlalchemy import select
@@ -121,6 +121,7 @@ async def get_product_sales(
 async def upload_sales_csv(
     file: UploadFile = File(...),
     product_id: Optional[int] = Form(None),
+    sku: Optional[str] = Form(None),
     db: AsyncSession = Depends(get_db),
     current_user: models.User = Depends(get_current_user),
 ):
@@ -129,28 +130,24 @@ async def upload_sales_csv(
     - quantity: number of units sold (positive integer)
     - sale_date: date of sale in YYYY-MM-DD format (optional, defaults to current time)
     - product_id is provided via form parameter, not in CSV
+    - sku (optional form field): if provided and CSV rows don't include SKU, this SKU will be used for all rows
     """
     if not file.filename.endswith('.csv'):
         raise HTTPException(status_code=400, detail="File must be a CSV")
-    
-    print(f"CSV Upload: product_id={product_id}, filename={file.filename}")  # Debug logging
     
     try:
         # Read CSV content
         content = await file.read()
         csv_data = content.decode('utf-8-sig')  # Handle BOM if present
-        
+
         # Clean the CSV data to remove potential issues
         csv_data = csv_data.strip()
-        
-        print(f"CSV Data received:\n{csv_data}")  # Debug logging
-        
+
         csv_reader = csv.DictReader(io.StringIO(csv_data))
-        
-        # Get the fieldnames to debug
+
+        # Get the fieldnames
         fieldnames = csv_reader.fieldnames
-        print(f"CSV fieldnames: {fieldnames}")  # Debug logging
-        
+
         sales_created = 0
         errors = []
         total_rows = 0
@@ -160,16 +157,42 @@ async def upload_sales_csv(
             
             # Clean row data - strip whitespace from all values
             cleaned_row = {k.strip() if k else k: v.strip() if v else v for k, v in row.items()}
-            print(f"Processing row {row_num}: {cleaned_row}")  # Debug logging
             
             try:
-                # Parse CSV row - expect columns: quantity, sale_date
-                # Product ID comes from form parameter
-                if not product_id:
-                    errors.append(f"Row {row_num}: No product_id provided in upload request")
-                    continue
-                
-                row_product_id = product_id
+                # Determine product: prefer SKU column, otherwise fall back to product_id form param, otherwise fall back to sku form param
+                row_product_id = None
+                # Accept multiple possible SKU column names (common variants)
+                row_sku = (
+                    cleaned_row.get('sku')
+                    or cleaned_row.get('SKU')
+                    or cleaned_row.get('Sku')
+                    or cleaned_row.get('sku_id')
+                    or cleaned_row.get('SKU_ID')
+                    or cleaned_row.get('product_sku')
+                    or cleaned_row.get('productSKU')
+                )
+                if row_sku:
+                    # find product by SKU scoped to current user when possible
+                    product_obj = await crud.get_product_by_sku(db, row_sku, current_user.id)
+                    if not product_obj:
+                        errors.append(f"Row {row_num}: Product with SKU '{row_sku}' not found for user")
+                        continue
+                    row_product_id = product_obj.id
+                else:
+                    # If product_id provided via form, use it
+                    if product_id:
+                        row_product_id = product_id
+                    else:
+                        # If a global sku was provided via form, use that
+                        if sku:
+                            product_obj = await crud.get_product_by_sku(db, sku, current_user.id)
+                            if not product_obj:
+                                errors.append(f"Row {row_num}: Product with SKU '{sku}' not found for user (form sku)")
+                                continue
+                            row_product_id = product_obj.id
+                        else:
+                            errors.append(f"Row {row_num}: No SKU in CSV and no product_id/sku provided in upload request")
+                            continue
                 
                 # Get quantity
                 if not cleaned_row.get('quantity'):
