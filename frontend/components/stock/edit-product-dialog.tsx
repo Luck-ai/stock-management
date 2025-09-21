@@ -5,6 +5,7 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { apiFetch } from '@/lib/api'
+import { normalizeProduct } from '@/lib/response-mappers'
 import {
   Dialog,
   DialogContent,
@@ -56,7 +57,7 @@ export function EditProductDialog({ open, onOpenChange, product, onEdit }: EditP
 
   // Fetch categories and suppliers like AddProductDialog so we can present proper options and resolve ids
   useEffect(() => {
-    let mounted = true
+    let active = true
 
     ;(async () => {
       try {
@@ -64,7 +65,7 @@ export function EditProductDialog({ open, onOpenChange, product, onEdit }: EditP
         const catsData = catsRes.ok ? await catsRes.json().catch(() => []) : []
         const supsData = supsRes.ok ? await supsRes.json().catch(() => []) : []
 
-        if (!mounted) return
+  if (!active) return
 
         const catList = Array.isArray(catsData)
           ? catsData.map((c: any) => (typeof c === 'string' ? { id: 0, name: c } : { id: c.id ?? 0, name: c.name ?? String(c) }))
@@ -73,15 +74,15 @@ export function EditProductDialog({ open, onOpenChange, product, onEdit }: EditP
           ? supsData.map((s: any) => (typeof s === 'string' ? { id: 0, name: s } : { id: s.id ?? 0, name: s.name ?? String(s) }))
           : []
 
-        setCategories(catList)
-        setSuppliers(supList)
+  if (active) setCategories(catList)
+  if (active) setSuppliers(supList)
       } catch (err) {
         console.error('Error fetching categories or suppliers', err)
       }
     })()
 
     return () => {
-      mounted = false
+      active = false
     }
   }, [])
 
@@ -169,23 +170,20 @@ export function EditProductDialog({ open, onOpenChange, product, onEdit }: EditP
       }
 
       const updated = await res.json()
-
-      // Resolve supplier & category display names similar to add flow
-      const supplierName = (updated.supplier && (updated.supplier.name ?? String(updated.supplier))) || formData.supplier || product.supplier || ""
-      const categoryName = (updated.category && (updated.category.name ?? String(updated.category))) || formData.category || product.category || ""
+      const normalized = normalizeProduct(updated)
 
       const updatedProduct: Product = {
         ...product,
-        id: updated.id ?? product.id,
-        name: updated.name ?? formData.name,
-        sku: updated.sku ?? formData.sku ?? "",
-        category: categoryName,
-        description: updated.description ?? product.description ?? "",
-  quantity: (updated.quantity ?? Number.parseInt(formData.quantity)) || 0,
-  price: (updated.price ?? Number.parseFloat(formData.price)) || 0,
-  lowStockThreshold: (updated.low_stock_threshold ?? Number.parseInt(formData.lowStockThreshold)) || 0,
-        supplier: supplierName,
-        lastUpdated: (updated.last_updated as string) ?? (updated.updated_at as string) ?? product.lastUpdated,
+        id: normalized.id ?? product.id,
+        name: normalized.name ?? formData.name,
+        sku: normalized.sku ?? formData.sku ?? "",
+        category: normalized.category ?? formData.category ?? product.category ?? "",
+        description: normalized.description ?? product.description ?? "",
+        quantity: normalized.quantity ?? (Number.parseInt(formData.quantity) || product.quantity),
+        price: normalized.price ?? (Number.parseFloat(formData.price) || product.price),
+        lowStockThreshold: normalized.lowStockThreshold ?? (Number.parseInt(formData.lowStockThreshold) || product.lowStockThreshold),
+        supplier: normalized.supplier ?? formData.supplier ?? product.supplier ?? "",
+        lastUpdated: normalized.lastUpdated ?? product.lastUpdated,
       }
 
       onEdit(updatedProduct)
@@ -204,7 +202,7 @@ export function EditProductDialog({ open, onOpenChange, product, onEdit }: EditP
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px]" style={{ backgroundColor: 'var(--ui-card-bg)' }}>
         <DialogHeader>
           <DialogTitle>Edit Product</DialogTitle>
           <DialogDescription>Update the product information. Changes will be saved immediately.</DialogDescription>

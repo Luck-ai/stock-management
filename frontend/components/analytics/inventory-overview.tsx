@@ -14,30 +14,77 @@ import {
   Bar,
   BarChart,
 } from "recharts"
+import { isOutOfStock, isLowStock, getThreshold } from "@/lib/stock-utils"
+import { useEffect, useState } from "react"
+import { getProducts, getCategories, getSales, Product, ProductCategory, filterByTimeRange } from "@/lib/api"
 
 interface InventoryOverviewProps {
   timeRange: string
 }
 
-// Mock data for inventory trends
-const inventoryTrendData = [
-  { date: "Jan", totalValue: 850000, totalItems: 1250, turnoverRate: 8.2 },
-  { date: "Feb", totalValue: 892000, totalItems: 1320, turnoverRate: 8.5 },
-  { date: "Mar", totalValue: 876000, totalItems: 1280, turnoverRate: 7.9 },
-  { date: "Apr", totalValue: 923000, totalItems: 1380, turnoverRate: 9.1 },
-  { date: "May", totalValue: 945000, totalItems: 1420, turnoverRate: 9.3 },
-  { date: "Jun", totalValue: 892340, totalItems: 1350, turnoverRate: 8.8 },
-]
-
-const stockLevelData = [
-  { category: "Electronics", inStock: 450, lowStock: 23, outOfStock: 5 },
-  { category: "Accessories", inStock: 320, lowStock: 12, outOfStock: 2 },
-  { category: "Clothing", inStock: 280, lowStock: 8, outOfStock: 1 },
-  { category: "Books", inStock: 150, lowStock: 15, outOfStock: 3 },
-  { category: "Home & Garden", inStock: 200, lowStock: 6, outOfStock: 1 },
-]
+// Basic placeholders; we'll compute real values from API
+const defaultTrend = [{ date: "Now", totalValue: 0, totalItems: 0, turnoverRate: 0 }]
 
 export function InventoryOverview({ timeRange }: InventoryOverviewProps) {
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [products, setProducts] = useState<Product[]>([])
+  const [categories, setCategories] = useState<ProductCategory[]>([])
+  const [stockLevelData, setStockLevelData] = useState<any[]>([])
+  const [inventoryTrendData, setInventoryTrendData] = useState<any[]>(defaultTrend)
+
+  useEffect(() => {
+    let mounted = true
+    setLoading(true)
+    setError(null)
+
+    async function load() {
+      try {
+  const [p, c, salesRaw] = await Promise.all([getProducts(), getCategories(), getSales()])
+        if (!mounted) return
+        setProducts(p)
+        setCategories(c)
+
+        // Compute stock by category
+        const catMap = new Map<number, any>()
+        c.forEach((cat) => catMap.set(cat.id, { category: cat.name, inStock: 0, lowStock: 0, outOfStock: 0 }))
+
+        p.forEach((prod: any) => {
+          const catId = prod.category_id
+          const catEntry = catMap.get(catId) || { category: prod.category?.name || 'Uncategorized', inStock: 0, lowStock: 0, outOfStock: 0 }
+          
+          if (isOutOfStock(prod)) catEntry.outOfStock += 1
+          else if (isLowStock(prod)) catEntry.lowStock += 1
+          else catEntry.inStock += prod.quantity
+          
+          catMap.set(catId, catEntry)
+        })
+
+        setStockLevelData(Array.from(catMap.values()))
+
+        // Inventory total value
+  const totalValue = p.reduce((sum: number, prod: any) => sum + (prod.price / 100) * prod.quantity, 0)
+  const totalItems = p.reduce((sum: number, prod: any) => sum + prod.quantity, 0)
+
+  // Compute turnoverRate using sales within timeRange: units sold divided by average inventory.
+  const sales = filterByTimeRange(salesRaw || [], timeRange, 'sale_date')
+  const unitsSoldInRange = sales.reduce((sum: number, s: any) => sum + (s.quantity ?? 0), 0)
+  const turnoverRate = totalItems > 0 ? Math.round((unitsSoldInRange / totalItems) * 100) : 0
+
+  setInventoryTrendData([{ date: 'Now', totalValue: Math.round(totalValue), totalItems, turnoverRate }])
+      } catch (err: any) {
+        setError(err?.message || 'Failed to load inventory')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    load()
+    return () => {
+      mounted = false
+    }
+  }, [timeRange])
+
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <Card className="md:col-span-2">
@@ -111,7 +158,7 @@ export function InventoryOverview({ timeRange }: InventoryOverviewProps) {
             className="h-[300px]"
           >
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={stockLevelData}>
+                <BarChart data={stockLevelData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="category" />
                 <YAxis />

@@ -1,30 +1,126 @@
 "use client"
 
+import { useState, useEffect } from "react"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { ChartContainer, ChartTooltip, ChartTooltipContent } from "@/components/ui/chart"
 import { Line, LineChart, XAxis, YAxis, CartesianGrid, ResponsiveContainer, Bar, BarChart } from "recharts"
+import { apiFetch } from "@/lib/api"
 
 interface SalesChartProps {
   productId: string
+  salesData?: any[]
+  refreshTrigger?: number // Add this to trigger re-fetching
 }
 
-// Mock sales data
-const salesData = [
-  { month: "Jan", sales: 45, revenue: 4495 },
-  { month: "Feb", sales: 52, revenue: 5198 },
-  { month: "Mar", sales: 38, revenue: 3798 },
-  { month: "Apr", sales: 61, revenue: 6099 },
-  { month: "May", sales: 55, revenue: 5495 },
-  { month: "Jun", sales: 67, revenue: 6698 },
-  { month: "Jul", sales: 43, revenue: 4297 },
-  { month: "Aug", sales: 58, revenue: 5798 },
-  { month: "Sep", sales: 49, revenue: 4899 },
-  { month: "Oct", sales: 72, revenue: 7198 },
-  { month: "Nov", sales: 65, revenue: 6498 },
-  { month: "Dec", sales: 78, revenue: 7798 },
-]
+interface SalesRecord {
+  id: number
+  product_id: number
+  user_id: number
+  quantity: number
+  sale_price: number
+  sale_date: string
+}
 
-export function SalesChart({ productId }: SalesChartProps) {
+export function SalesChart({ productId, salesData: propSalesData, refreshTrigger }: SalesChartProps) {
+  const [salesData, setSalesData] = useState<SalesRecord[]>([])
+  const [loading, setLoading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  // Fetch sales data from backend
+  useEffect(() => {
+    if (!productId || propSalesData) return
+
+    const fetchSalesData = async () => {
+      setLoading(true)
+      setError(null)
+      try {
+        const response = await apiFetch(`/sales/product/${productId}`)
+        if (!response.ok) {
+          throw new Error(`Failed to fetch sales data: ${response.status}`)
+        }
+        const data = await response.json()
+        setSalesData(data)
+      } catch (err) {
+        console.error('Error fetching sales data:', err)
+        setError(err instanceof Error ? err.message : 'Failed to load sales data')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    fetchSalesData()
+  }, [productId, propSalesData, refreshTrigger])
+
+  // Transform real sales data into chart format
+  const transformSalesData = (sales: SalesRecord[]) => {
+    if (!sales || sales.length === 0) return []
+    
+    // Group sales by year-month (YYYY-MM) to avoid mixing the same month across years
+    const monthlyData: { [key: string]: { sales: number; revenue: number; yearMonth: string; monthIndex: number } } = {}
+
+    sales.forEach(sale => {
+      const date = new Date(sale.sale_date)
+      const year = date.getFullYear()
+      const month = date.getMonth() + 1 // 1-12
+      const monthIndex = year * 100 + month // sortable index like 202509
+      const key = `${year}-${String(month).padStart(2, '0')}` // e.g. 2025-09
+
+      if (!monthlyData[key]) {
+        monthlyData[key] = { sales: 0, revenue: 0, yearMonth: key, monthIndex }
+      }
+
+      monthlyData[key].sales += sale.quantity
+      monthlyData[key].revenue += sale.quantity * sale.sale_price
+    })
+
+    // Convert to chart format and sort by yearMonth
+    return Object.values(monthlyData)
+      .map(data => ({
+        month: data.yearMonth,
+        sales: data.sales,
+        revenue: Math.round(data.revenue * 100) / 100,
+        monthIndex: data.monthIndex
+      }))
+      .sort((a, b) => a.monthIndex - b.monthIndex)
+  }
+  
+  // Use provided salesData or fetched data
+  const displayData = transformSalesData(propSalesData || salesData)
+  
+  // Show loading state
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-[300px] text-center">
+        <div>
+          <div className="text-muted-foreground mb-2">Loading sales data...</div>
+        </div>
+      </div>
+    )
+  }
+
+  // Show error state
+  if (error) {
+    return (
+      <div className="flex items-center justify-center h-[300px] text-center">
+        <div>
+          <div className="text-destructive mb-2">Error loading sales data</div>
+          <p className="text-sm text-muted-foreground">{error}</p>
+        </div>
+      </div>
+    )
+  }
+  
+  // Show empty state if no data
+  if (!displayData || displayData.length === 0) {
+    return (
+      <div className="flex items-center justify-center h-[300px] text-center">
+        <div>
+          <div className="text-muted-foreground mb-2">No sales data available</div>
+          <p className="text-sm text-muted-foreground">Record sales or upload CSV data to see charts</p>
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <Card>
@@ -43,7 +139,7 @@ export function SalesChart({ productId }: SalesChartProps) {
             className="h-[300px]"
           >
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={salesData}>
+              <BarChart data={displayData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" />
                 <YAxis />
@@ -71,7 +167,7 @@ export function SalesChart({ productId }: SalesChartProps) {
             className="h-[300px]"
           >
             <ResponsiveContainer width="100%" height="100%">
-              <LineChart data={salesData}>
+              <LineChart data={displayData}>
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="month" />
                 <YAxis />

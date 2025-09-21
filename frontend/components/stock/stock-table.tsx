@@ -3,321 +3,363 @@
 import Link from "next/link"
 import { useEffect, useState } from "react"
 import { Button } from "@/components/ui/button"
+import { Select, SelectTrigger, SelectContent, SelectItem, SelectValue } from "@/components/ui/select"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
-import { Edit, Trash2, AlertTriangle, Eye, Grid, List } from "lucide-react"
+import { Edit, Trash2, AlertTriangle, Eye, Grid, List, Filter, Package, DollarSign } from "lucide-react"
 import { apiFetch } from '@/lib/api'
 import type { Product } from "./stock-management"
 import { ConfirmDialog } from "@/components/ui/confirm-dialog"
+import { getStockStatus } from "@/lib/stock-utils"
 
-interface StockTableProps {
-  products?: Product[]
-  onEdit?: (product: Product) => void
-  onDelete?: (id: string) => void
-}
-
-export function StockTable({ products, onEdit, onDelete }: StockTableProps) {
+export function StockTable({ products, onEdit, onDelete, categories }: { products?: Product[]; onEdit?: (p: Product) => void; onDelete?: (id: string) => void; categories?: string[] }) {
   const [viewMode, setViewMode] = useState<'list' | 'grid'>('list')
-  const getStockStatus = (quantity: number, threshold: number) => {
-  
-    if (!threshold || threshold <= 0) {
-      if (quantity === 0) return { label: "Out of Stock", variant: "destructive" as const }
-      return { label: "In Stock", variant: "default" as const }
-    }
-
-    const margin = Math.ceil(threshold * 0.2)
-
-    // Treat zero as out of stock, then check for low stock margin before generic below-threshold case
-    // TODO Fix this
-    if (quantity === 0) return { label: "Out of Stock", variant: "destructive" as const }
-    if (quantity < threshold) return { label: "Out of Stock", variant: "destructive" as const }
-    if (Math.abs(threshold - quantity) <= margin) return { label: "Low Stock", variant: "secondary" as const }
-    return { label: "In Stock", variant: "default" as const }
-  }
-
+  const [selectedCategory, setSelectedCategory] = useState<string>('All')
   const [fetchedProducts, setFetchedProducts] = useState<Product[] | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const handleDelete = async (id: string, name?: string) => {
-    
-    if (onDelete) {
-      onDelete(id)
-      return
-    }
-
-    setPendingDelete({ id, name })
-    setConfirmOpen(true)
-  }
-
   const [confirmOpen, setConfirmOpen] = useState(false)
   const [pendingDelete, setPendingDelete] = useState<{ id: string; name?: string } | null>(null)
+  const [confirmProductError, setConfirmProductError] = useState<string | null>(null)
 
-  async function performDelete(id: string) {
-    try {
-      const url = `/products/${id}`
-
-      const res = await apiFetch(url, { method: 'DELETE' })
-      if (!res.ok) {
-        const text = await res.text().catch(() => '')
-        console.error('Failed to delete product', { status: res.status, body: text })
-        window.alert('Failed to delete product')
-        setConfirmOpen(false)
-        return
-      }
-      
-      setFetchedProducts((prev) => (prev ? prev.filter((p) => p.id !== id) : prev))
-      setConfirmOpen(false)
-    } catch (err) {
-      console.error('Error deleting product', err)
-      window.alert('Error deleting product')
-      setConfirmOpen(false)
-    }
+  const formatDateOnly = (val?: string) => {
+    if (!val) return ''
+    try { const d = new Date(val); if (isNaN(d.getTime())) return String(val); return d.toLocaleDateString() } catch { return String(val) }
   }
 
   useEffect(() => {
-    let mounted = true
-    // If parent supplied products (even an empty array), don't fetch — parent is authoritative.
+    let active = true
     if (products !== undefined) {
-      // Ensure we are not left in a loading state if a previous fetch was in-flight.
       setFetchedProducts(null)
       setLoading(false)
       setError(null)
       return
     }
+
     ;(async () => {
       setLoading(true)
       setError(null)
       try {
-  const res = await apiFetch('/products/')
-        if (!mounted) return
+        const res = await apiFetch('/products/')
+        if (!active) return
         if (!res.ok) {
           const text = await res.text()
           throw new Error(`Failed to fetch products: ${res.status} ${text}`)
         }
         const data = await res.json()
-  // Raw response received from /products/
-        if (!mounted) return
-        const mapped: Product[] = Array.isArray(data)
-          ? data.map((p: any) => ({
-              id: String(p.id ?? ""),
-              name: p.name ?? "",
-              sku: p.sku ?? "",
-              category: p.category?.name ?? p.category ?? "",
-              description: p.description ?? "",
-              quantity: Number(p.quantity ?? 0),
-              price: Number(p.price ?? 0),
-              
-              lowStockThreshold: Number(p.low_stock_threshold ?? 0),
-              
-              statusLabel: p.status ?? p.quantity_warning_label ?? undefined,
-              statusVariant: p.quantity_warning_variant ?? undefined,
-              isLowStockFlag: typeof p.is_low_stock === 'boolean' ? p.is_low_stock : undefined,
-              supplier: p.supplier?.name ?? p.supplier ?? "",
-              lastUpdated: p.last_updated ?? p.lastUpdated ?? "",
-            }))
-          : []
-        setFetchedProducts(mapped)
-  // Mapped products ready for UI
+        if (!active) return
+        const mod = await import('@/lib/response-mappers')
+        const mapped: Product[] = Array.isArray(data) ? data.map((p: any) => mod.normalizeProduct(p)) : []
+        if (active) setFetchedProducts(mapped)
       } catch (err: any) {
-        console.error(err)
-        if (mounted) setError(err.message || String(err))
-      } finally {
-        if (mounted) setLoading(false)
-      }
+        if (active) setError(err.message || String(err))
+      } finally { if (active) setLoading(false) }
     })()
-    return () => {
-      mounted = false
-    }
+    return () => { active = false }
   }, [products])
 
+  useEffect(() => {
+    let active = true
+    const handler = async (e: any) => {
+      try {
+        const url: string = e?.detail?.url
+        if (url && url.includes('/products')) {
+          setFetchedProducts(null)
+          setLoading(true)
+          setError(null)
+          try {
+            const res = await apiFetch('/products/')
+            if (!res.ok) throw new Error(`Failed to fetch products: ${res.status}`)
+            const data = await res.json()
+            const mod = await import('@/lib/response-mappers')
+            const mapped: Product[] = Array.isArray(data) ? data.map((p: any) => mod.normalizeProduct(p)) : []
+            if (active) setFetchedProducts(mapped)
+          } catch (err: any) {
+            if (active) setError(err.message || String(err))
+          } finally { if (active) setLoading(false) }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    window.addEventListener('csv:uploaded', handler)
+    return () => { active = false; window.removeEventListener('csv:uploaded', handler) }
+  }, [])
+
+  async function performDelete(id: string) {
+    try {
+      const res = await apiFetch(`/products/${id}`, { method: 'DELETE' })
+      if (!res.ok) throw new Error('Failed to delete')
+      setFetchedProducts((prev) => (prev ? prev.filter((p) => p.id !== id) : prev))
+      setConfirmOpen(false)
+    } catch (err: any) {
+      setConfirmProductError(String(err?.message ?? err))
+      throw err
+    }
+  }
+
   const sourceProducts = products && products.length ? products : fetchedProducts ?? []
+  const categoryOptions = (categories && categories.length ? categories : Array.from(new Set(sourceProducts.map((p) => p.category).filter(Boolean)))) || []
+  const displayedProducts = selectedCategory && selectedCategory !== 'All' ? sourceProducts.filter((p) => p.category === selectedCategory) : sourceProducts
 
   if (loading) return <div className="rounded-md border p-4">Loading products...</div>
   if (error) return <div className="rounded-md border p-4 text-destructive">Error: {error}</div>
+
+  const getStatusColor = (status: string) => {
+    switch (status) {
+      case "In Stock": return "bg-green-100 text-green-800"
+      case "Low Stock": return "bg-yellow-100 text-yellow-800"
+      case "Out of Stock": return "bg-red-100 text-red-800"
+      default: return "bg-gray-100 text-gray-800"
+    }
+  }
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case "In Stock": return <Package className="h-3 w-3" />
+      case "Low Stock": return <AlertTriangle className="h-3 w-3" />
+      case "Out of Stock": return <AlertTriangle className="h-3 w-3" />
+      default: return <Package className="h-3 w-3" />
+    }
+  }
 
   return (
     <div className="rounded-md border">
       <div className="flex items-center justify-between p-4">
         <div className="text-sm font-medium">Inventory</div>
         <div className="flex items-center space-x-2">
+          <div className="flex items-center space-x-2">
+            <Filter className="h-4 w-4 text-muted-foreground" />
+            <span className="text-sm font-medium">Filter</span>
+            <Select defaultValue={selectedCategory} onValueChange={(v) => setSelectedCategory(v)}>
+              <SelectTrigger size="sm">
+                <SelectValue>{selectedCategory}</SelectValue>
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="All">All</SelectItem>
+                {categoryOptions.map((c) => (
+                  <SelectItem key={c} value={c}>{c}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
           <Button variant={viewMode === 'list' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('list')}>
             <List className="mr-2 h-4 w-4" /> List
           </Button>
           <Button variant={viewMode === 'grid' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('grid')}>
             <Grid className="mr-2 h-4 w-4" /> Grid
           </Button>
+          <label className="inline-block">
+            <input
+              type="file"
+              accept=".csv"
+              style={{ display: 'none' }}
+              id="sales-csv-input"
+              onChange={async (e) => {
+                const f = e.target.files?.[0]
+                if (!f) return
+                try {
+                  const form = new FormData()
+                  form.append('file', f)
+                  const res = await apiFetch('/sales/upload', { method: 'POST', body: form })
+                  if (!res.ok) {
+                    const txt = await res.text().catch(() => '')
+                    throw new Error(txt || `Upload failed: ${res.status}`)
+                  }
+                  const data = await res.json()
+                  window.dispatchEvent(new CustomEvent('csv:uploaded', { detail: { url: '/sales/upload', result: data } }))
+                  alert(data?.message || 'Upload complete')
+                } catch (err: any) {
+                  console.error('CSV upload error', err)
+                  alert('CSV upload failed: ' + (err?.message ?? String(err)))
+                } finally { (e.target as HTMLInputElement).value = '' }
+              }}
+            />
+            <Button size="sm">Upload Sales CSV</Button>
+          </label>
         </div>
       </div>
+
       {viewMode === 'grid' ? (
         <div className="p-4">
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {sourceProducts.map((product) => (
-              <Card key={product.id} className="border rounded-md hover:shadow-lg transition-shadow" style={{ borderColor: '#7a67ce' }}>
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-center space-x-3">
-                      <div className="w-12 h-12 bg-slate-100 rounded-lg flex items-center justify-center text-sm text-muted-foreground">
-                        {product.name.slice(0, 2).toUpperCase()}
-                      </div>
-                      <div>
-                        <CardTitle className="text-lg">{product.name}</CardTitle>
-                        <p className="text-sm text-muted-foreground">{product.sku}</p>
-                      </div>
-                    </div>
-                    <Badge variant={product.quantity === 0 ? 'destructive' : product.quantity <= product.lowStockThreshold ? 'secondary' : 'default'}>
-                      {product.quantity === 0 ? 'Out of Stock' : product.quantity <= product.lowStockThreshold ? 'Low Stock' : 'In Stock'}
-                    </Badge>
-                  </div>
-                </CardHeader>
-                <CardContent className="space-y-4 bg-[#e8e6f9]">
-                  <p className="text-sm text-muted-foreground line-clamp-2">{product.description}</p>
+            {displayedProducts.map((product) => {
+              const serverLabel = (product as any).statusLabel as string | undefined
+              const serverVariant = (product as any).statusVariant as 'destructive' | 'secondary' | 'default' | undefined
+              const serverIsLow = (product as any).isLowStockFlag as boolean | undefined
 
-                  <div className="grid grid-cols-2 gap-4">
-                    <div className="flex items-center space-x-2">
-                      <span className="font-semibold">${Number(product.price).toFixed(2)}</span>
-                    </div>
-                    <div className="flex items-center space-x-2">
-                      <span>{product.quantity} units</span>
-                    </div>
-                  </div>
+              const computed = getStockStatus(product.quantity, product.lowStockThreshold)
+              const label = serverLabel ?? computed.label
+              const variant = serverVariant ?? computed.variant
+              const isLowStockFlagForUI = typeof serverIsLow === 'boolean' ? serverIsLow : computed.label === 'Low Stock'
+              const isOutOfStockFlagForUI = computed.label === 'Out of Stock'
 
-                  <div className="flex items-center justify-between pt-2">
-                    <div className="flex items-center space-x-2">
-                      <span className="text-sm">{product.category}</span>
+              return (
+                <Card key={product.id} className="hover:shadow-lg transition-shadow">
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-12 h-12 rounded-lg bg-muted flex items-center justify-center">
+                          <Package className="h-6 w-6 text-muted-foreground" />
+                        </div>
+                        <div>
+                          <CardTitle className="text-lg">{product.name}</CardTitle>
+                          <p className="text-sm text-muted-foreground">{product.sku}</p>
+                        </div>
+                      </div>
+                      <Badge className={getStatusColor(label)}>
+                        {getStatusIcon(label)}
+                        <span className="ml-1">{label}</span>
+                      </Badge>
                     </div>
-                    <div className="flex items-center space-x-2">
-                      <Button size="sm" variant="ghost" onClick={() => onEdit && onEdit(product)}>
-                        <Edit className="h-4 w-4" />
-                      </Button>
-                      <Button size="sm" variant="ghost" onClick={() => handleDelete(product.id, product.name)}>
-                        <Trash2 className="h-4 w-4" />
-                      </Button>
-                      <Button size="sm" variant="ghost" asChild>
-                        <Link href={`/dashboard/products/${product.id}`}>
-                          <Eye className="h-4 w-4" />
-                        </Link>
-                      </Button>
+                  </CardHeader>
+                  <CardContent className="space-y-4">
+                    <p className="text-sm text-muted-foreground line-clamp-2">{product.description}</p>
+
+                    <div className="grid grid-cols-2 gap-4">
+                      <div className="flex items-center space-x-2">
+                        <DollarSign className="h-4 w-4 text-muted-foreground" />
+                        <span className="font-semibold">${Number(product.price).toFixed(2)}</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Package className="h-4 w-4 text-muted-foreground" />
+                        <span>{product.quantity} units</span>
+                      </div>
                     </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ))}
+
+                    <div className="flex items-center justify-between pt-2">
+                      <div className="flex items-center space-x-2">
+                        <span className="text-sm">{product.category || 'Uncategorized'}</span>
+                      </div>
+                      <div className="flex items-center space-x-2">
+                        <Button size="sm" variant="ghost" onClick={() => onEdit && onEdit(product)}>
+                          <Edit className="h-4 w-4" />
+                        </Button>
+                        <Button size="sm" variant="ghost" onClick={() => { setPendingDelete({ id: product.id, name: product.name }); setConfirmOpen(true) }}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                        <Button size="sm" variant="ghost" asChild>
+                          <Link href={`/dashboard/products/${product.id}`}>
+                            <Eye className="h-4 w-4" />
+                          </Link>
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )
+            })}
           </div>
-          {sourceProducts.length === 0 && (
+          {displayedProducts.length === 0 && (
             <div className="text-center py-12">
-              <p className="text-muted-foreground">No products found</p>
+              <Package className="h-12 w-12 text-muted-foreground mx-auto mb-4" />
+              <h3 className="text-lg font-semibold mb-2">No products found</h3>
+              <p className="text-muted-foreground">Try adjusting your search or category filter</p>
             </div>
           )}
         </div>
       ) : (
         <>
           <ConfirmDialog
-        open={confirmOpen}
-        onOpenChange={(v) => {
-          setConfirmOpen(v)
-          if (!v) setPendingDelete(null)
-        }}
-        title="Delete product"
-        description={pendingDelete && pendingDelete.name ? `Delete '${pendingDelete.name}'? This action cannot be undone.` : "Are you sure you want to delete this product? This action cannot be undone."}
-        confirmLabel="Delete"
-        cancelLabel="Cancel"
-        onConfirm={async () => {
-          if (!pendingDelete) return
-          await performDelete(pendingDelete.id)
-        }}
-      />
-        <Table>
-        <TableHeader className="bg-transparent">
-          <TableRow className="border-b-2" style={{ borderColor: '#7a67ce' }}>
-            <TableHead className="w-12">#</TableHead>
-            <TableHead>Product</TableHead>
-            <TableHead>SKU</TableHead>
-            <TableHead>Category</TableHead>
-            <TableHead>Quantity</TableHead>
-            <TableHead>Price</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Supplier</TableHead>
-            <TableHead>Last Updated</TableHead>
-            <TableHead className="text-right">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {sourceProducts.length === 0 ? (
-            <TableRow>
-              <TableCell colSpan={10} className="text-center py-8 text-sm text-muted-foreground">
-                No products found
-              </TableCell>
-            </TableRow>
-          ) : (
-            <>
-              {sourceProducts.map((product) => {
-                // Determine status label/variant using server-provided values when available.
-                const serverLabel = (product as any).statusLabel as string | undefined
-                const serverVariant = (product as any).statusVariant as string | undefined
-                const serverIsLow = (product as any).isLowStockFlag as boolean | undefined
+            open={confirmOpen}
+            onOpenChange={(v) => { setConfirmOpen(v); if (!v) { setPendingDelete(null); setConfirmProductError(null) } }}
+            title="Delete product"
+            description={pendingDelete && pendingDelete.name ? `Delete '${pendingDelete.name}'? This action cannot be undone.` : "Are you sure you want to delete this product? This action cannot be undone."}
+            confirmLabel="Delete"
+            cancelLabel="Cancel"
+            error={confirmProductError}
+            onConfirm={async () => { if (!pendingDelete) return; await performDelete(pendingDelete.id) }}
+          />
+          <Table>
+            <TableHeader className="bg-transparent">
+              <TableRow className="border-b-2" style={{ borderColor: 'var(--ui-table-header-border)' }}>
+                <TableHead className="w-12">#</TableHead>
+                <TableHead>Product</TableHead>
+                <TableHead>SKU</TableHead>
+                <TableHead>Category</TableHead>
+                <TableHead>Quantity</TableHead>
+                <TableHead>Low Threshold</TableHead>
+                <TableHead>Price</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead>Supplier</TableHead>
+                <TableHead>Last Updated</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {displayedProducts.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={11} className="text-center py-8 text-sm text-muted-foreground">
+                    No products found
+                  </TableCell>
+                </TableRow>
+              ) : (
+                <>
+                  {displayedProducts.map((product) => {
+                    const serverLabel = (product as any).statusLabel as string | undefined
+                    const serverVariant = (product as any).statusVariant as string | undefined
+                    const serverIsLow = (product as any).isLowStockFlag as boolean | undefined
 
-                const computed = getStockStatus(product.quantity, product.lowStockThreshold)
-                const label = serverLabel ?? computed.label
-                // Accept serverVariant values that match our Badge variants; fallback to computed mapping.
-                const variant = (serverVariant as 'destructive' | 'secondary' | 'default') ?? computed.variant
-                return (
-                  <TableRow key={product.id} className="bg-[#e8e6f9]" style={{ borderTop: '2px solid #aaa3d2' }}>
-                    <TableCell className="w-12 py-4">
-                      <div className="flex items-center space-x-2">
-                        <input type="checkbox" className="accent-purple-600" />
-                        <div className="w-8 h-6 bg-white rounded-sm flex items-center justify-center text-xs font-medium text-muted-foreground border" style={{ borderColor: '#7a67ce' }}>
-                          {product.name ? product.name.slice(0, 1).toUpperCase() : ''}
-                        </div>
-                      </div>
-                    </TableCell>
-                    <TableCell className="font-medium">{product.name}</TableCell>
-                    <TableCell className="font-mono text-sm">{product.sku}</TableCell>
-                    <TableCell>{product.category}</TableCell>
-                    <TableCell>
-                      <div className="flex items-center space-x-2">
-                        <span>{product.quantity}</span>
-                        {/* Show warning icon if server explicitly marks low stock/out-of-stock, else use computed status */}
-                        {(() => {
-                          // If server explicitly set a boolean flag, respect it
-                          if (typeof serverIsLow === 'boolean') return serverIsLow
-                          // Otherwise use computed status
-                          const computedForIcon = getStockStatus(product.quantity, product.lowStockThreshold)
-                          return computedForIcon.label !== 'In Stock'
-                        })() && (
-                          <AlertTriangle className="h-4 w-4 text-destructive" />
-                        )}
-                      </div>
-                    </TableCell>
-                    <TableCell>{Number(product.price).toFixed(2)}</TableCell>
-                    <TableCell>
-                      <Badge variant={variant as any}>{label}</Badge>
-                    </TableCell>
-                    <TableCell>{product.supplier}</TableCell>
-                    <TableCell>{product.lastUpdated}</TableCell>
-                    <TableCell className="text-right">
-                      <div className="flex items-center justify-end space-x-2">
-                        <Button variant="ghost" size="sm" asChild>
-                          <Link href={`/dashboard/products/${product.id}`}>
-                            <Eye className="h-4 w-4" />
-                          </Link>
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => onEdit && onEdit(product)}>
-                          <Edit className="h-4 w-4" />
-                        </Button>
-                        <Button variant="ghost" size="sm" onClick={() => handleDelete(product.id, product.name)}>
-                          <Trash2 className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    </TableCell>
-                  </TableRow>
-                )
-              })}
-            </>
-          )}
-        </TableBody>
-        </Table>
+                    const computed = getStockStatus(product.quantity, product.lowStockThreshold)
+                    const label = serverLabel ?? computed.label
+                    const variant = (serverVariant as 'destructive' | 'secondary' | 'default') ?? computed.variant
+                    const isLowStockFlagForUI = typeof serverIsLow === 'boolean' ? serverIsLow : computed.label === 'Low Stock'
+                    const isOutOfStockFlagForUI = computed.label === 'Out of Stock'
+
+                    return (
+                      <TableRow key={product.id} style={{ backgroundColor: 'var(--ui-table-row-bg)', borderTop: '2px solid var(--ui-table-row-border)' }}>
+                        <TableCell className="w-12 py-4">
+                          <div className="flex items-center space-x-2">
+                            <input type="checkbox" className="accent-purple-600" />
+                            {/* compact placeholder removed to simplify layout */}
+                          </div>
+                        </TableCell>
+                        <TableCell className="font-medium">{product.name}</TableCell>
+                        <TableCell className="font-mono text-sm">{product.sku}</TableCell>
+                        <TableCell>{product.category}</TableCell>
+                        <TableCell>
+                          <div className="flex items-center space-x-2">
+                            <span className={isOutOfStockFlagForUI ? 'text-red-700 font-semibold' : isLowStockFlagForUI ? 'text-yellow-700 font-semibold' : ''}>{product.quantity}</span>
+                            {(() => {
+                              if (typeof serverIsLow === 'boolean') return serverIsLow
+                              const computedForIcon = getStockStatus(product.quantity, product.lowStockThreshold)
+                              return computedForIcon.label !== 'In Stock'
+                            })() && (
+                              <AlertTriangle className={isOutOfStockFlagForUI ? 'h-4 w-4 text-red-600' : isLowStockFlagForUI ? 'h-4 w-4 text-yellow-600' : 'h-4 w-4 text-destructive'} />
+                            )}
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-sm">{product.lowStockThreshold}</TableCell>
+                        <TableCell>{Number(product.price).toFixed(2)}</TableCell>
+                        <TableCell>
+                          <Badge variant={variant as any}>{label}</Badge>
+                        </TableCell>
+                        <TableCell>{product.supplier}</TableCell>
+                        <TableCell>{formatDateOnly(product.lastUpdated)}</TableCell>
+                        <TableCell className="text-right">
+                          <div className="flex items-center justify-end space-x-2">
+                            <Button variant="ghost" size="sm" asChild>
+                              <Link href={`/dashboard/products/${product.id}`}>
+                                <Eye className="h-4 w-4" />
+                              </Link>
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => onEdit && onEdit(product)}>
+                              <Edit className="h-4 w-4" />
+                            </Button>
+                            <Button variant="ghost" size="sm" onClick={() => { setPendingDelete({ id: product.id, name: product.name }); setConfirmOpen(true) }}>
+                              <Trash2 className="h-4 w-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </>
+              )}
+            </TableBody>
+          </Table>
         </>
       )}
     </div>

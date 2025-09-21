@@ -17,29 +17,99 @@ import {
 } from "recharts"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
+import { useEffect, useState } from "react"
+import { getCategories, getProducts, getSales, ProductCategory, Product, filterByTimeRange } from "@/lib/api"
 
 interface CategoryPerformanceProps {
   timeRange: string
 }
 
-// Mock category data
-const categoryRevenueData = [
-  { category: "Electronics", revenue: 125000, growth: 15.2, margin: 35 },
-  { category: "Accessories", revenue: 78000, growth: 8.7, margin: 42 },
-  { category: "Clothing", revenue: 45000, growth: -2.1, margin: 28 },
-  { category: "Books", revenue: 23000, growth: -8.5, margin: 18 },
-  { category: "Home & Garden", revenue: 34000, growth: 12.3, margin: 31 },
-]
-
-const categoryMetricsData = [
-  { category: "Electronics", inventory: 85, sales: 92, profit: 78, satisfaction: 88 },
-  { category: "Accessories", inventory: 78, sales: 85, profit: 82, satisfaction: 91 },
-  { category: "Clothing", inventory: 65, sales: 58, profit: 45, satisfaction: 75 },
-  { category: "Books", inventory: 45, sales: 42, profit: 35, satisfaction: 82 },
-  { category: "Home & Garden", inventory: 72, sales: 68, profit: 65, satisfaction: 86 },
-]
-
 export function CategoryPerformance({ timeRange }: CategoryPerformanceProps) {
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [categories, setCategories] = useState<ProductCategory[]>([])
+  const [products, setProducts] = useState<Product[]>([])
+  const [categoryRevenueData, setCategoryRevenueData] = useState<any[]>([])
+  const [categoryMetricsData, setCategoryMetricsData] = useState<any[]>([])
+
+  useEffect(() => {
+    let mounted = true
+    setLoading(true)
+    setError(null)
+
+    async function load() {
+      try {
+  const [cats, prods, salesRaw] = await Promise.all([getCategories(), getProducts(), getSales()])
+        if (!mounted) return
+
+        setCategories(cats)
+        setProducts(prods)
+
+        // Map products by id for quick lookup
+        const prodMap = new Map<number, any>()
+        prods.forEach((p: any) => prodMap.set(p.id, p))
+
+        // Initialize category buckets (including uncategorized)
+        const catBuckets = new Map<number | string, any>()
+        cats.forEach((c) => catBuckets.set(c.id, { category: c.name, revenue: 0, salesUnits: 0, inventory: 0 }))
+        catBuckets.set('uncat', { category: 'Uncategorized', revenue: 0, salesUnits: 0, inventory: 0 })
+
+        // Filter sales by timeRange then aggregate into categories
+        const sales = filterByTimeRange(salesRaw || [], timeRange, 'sale_date')
+        sales.forEach((s: any) => {
+          const pid = s.product_id
+          const prod = prodMap.get(pid)
+          const catId = prod?.category_id ?? 'uncat'
+          const bucket = catBuckets.get(catId) || { category: prod?.category?.name || 'Uncategorized', revenue: 0, salesUnits: 0, inventory: 0 }
+          const salePrice = (s.sale_price ?? 0)
+          bucket.revenue += salePrice * (s.quantity ?? 0)
+          bucket.salesUnits += (s.quantity ?? 0)
+          catBuckets.set(catId, bucket)
+        })
+
+        // Compute inventory per category
+        prods.forEach((p: any) => {
+          const catId = p.category_id ?? 'uncat'
+          const bucket = catBuckets.get(catId) || { category: p.category?.name || 'Uncategorized', revenue: 0, salesUnits: 0, inventory: 0 }
+          bucket.inventory += p.quantity
+          catBuckets.set(catId, bucket)
+        })
+
+        // Build arrays for charts
+        const revenueArr: any[] = Array.from(catBuckets.values()).map((b) => ({
+          category: b.category,
+          revenue: Math.round(b.revenue),
+          growth: 0,
+          margin: 0,
+        }))
+
+        // For radar metrics, normalize inventory and sales to 0-100
+        const maxInventory = Math.max(...Array.from(catBuckets.values()).map((b) => b.inventory || 0), 1)
+        const maxSales = Math.max(...Array.from(catBuckets.values()).map((b) => b.salesUnits || 0), 1)
+
+        const metricsArr: any[] = Array.from(catBuckets.values()).map((b) => ({
+          category: b.category,
+          inventory: Math.round((b.inventory / maxInventory) * 100),
+          sales: Math.round((b.salesUnits / maxSales) * 100),
+          profit: b.revenue ? Math.round(Math.min(100, (b.revenue / (b.revenue + 1)) * 100)) : 0,
+          satisfaction: 80,
+        }))
+
+        setCategoryRevenueData(revenueArr)
+        setCategoryMetricsData(metricsArr)
+      } catch (err: any) {
+        setError(err?.message || 'Failed to load category analytics')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    load()
+    return () => {
+      mounted = false
+    }
+  }, [timeRange])
+
   return (
     <div className="grid gap-4 md:grid-cols-2">
       <Card>
@@ -128,23 +198,23 @@ export function CategoryPerformance({ timeRange }: CategoryPerformanceProps) {
                 <div className="flex-1">
                   <div className="flex items-center justify-between mb-2">
                     <h4 className="font-medium">{category.category}</h4>
-                    <Badge variant={category.growth > 0 ? "default" : "destructive"}>
-                      {category.growth > 0 ? "+" : ""}
-                      {category.growth}%
+                    <Badge variant={category.revenue > 0 ? "default" : "destructive"}>
+                      {category.revenue > 0 ? "+" : ""}
+                      {Math.round((category.revenue || 0) / 100)}
                     </Badge>
                   </div>
                   <div className="grid grid-cols-3 gap-4 text-sm">
                     <div>
                       <p className="text-muted-foreground">Revenue</p>
-                      <p className="font-medium">${category.revenue.toLocaleString()}</p>
+                      <p className="font-medium">${(category.revenue || 0).toLocaleString()}</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Margin</p>
-                      <p className="font-medium">{category.margin}%</p>
+                      <p className="font-medium">{0}%</p>
                     </div>
                     <div>
                       <p className="text-muted-foreground">Performance</p>
-                      <Progress value={category.margin} className="h-2 mt-1" />
+                      <Progress value={0} className="h-2 mt-1" />
                     </div>
                   </div>
                 </div>

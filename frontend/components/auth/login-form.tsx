@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 import { Eye, EyeOff, Loader2 } from "lucide-react"
+import { useAuth } from "@/components/auth/auth-provider"
 
 export function LoginForm() {
   const [email, setEmail] = useState("")
@@ -18,6 +19,7 @@ export function LoginForm() {
   const [isLoading, setIsLoading] = useState(false)
   const [error, setError] = useState("")
   const router = useRouter()
+  const { login } = useAuth()
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -38,14 +40,11 @@ export function LoginForm() {
       }
 
       const data = await res.json()
-      // Persist JWT token + minimal auth state for the demo app
+      // Use the auth context to handle login
       if (data && data.access_token) {
-        localStorage.setItem('access_token', data.access_token)
-        localStorage.setItem('token_type', data.token_type || 'bearer')
+        login(data.access_token, data.token_type || 'bearer', data.email || email)
+        router.push("/dashboard")
       }
-      localStorage.setItem("isAuthenticated", "true")
-      localStorage.setItem("userEmail", data.email || email)
-      router.push("/dashboard")
     } catch (err) {
       setError("Login failed. Please check your connection and try again.")
     } finally {
@@ -82,6 +81,7 @@ export function LoginForm() {
             placeholder="Enter your password"
             value={password}
             onChange={(e) => setPassword(e.target.value)}
+            className="password-toggle-offset"
             required
           />
           <Button

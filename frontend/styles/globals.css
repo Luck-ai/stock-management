@@ -37,10 +37,16 @@
   --sidebar-accent-foreground: oklch(0.205 0 0);
   --sidebar-border: oklch(0.922 0 0);
   --sidebar-ring: oklch(0.708 0 0);
+  /* UI: card and table theming for components */
+  --ui-card-border: #947cff;
+  --ui-card-bg: #eae9fa;
+  --ui-table-header-border: #7a67ce;
+  --ui-table-row-bg: #e8e6f9;
+  --ui-table-row-border: #aaa3d2;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
+  --background: oklch(23.682% 0.10853 288.789);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.145 0 0);
   --card-foreground: oklch(0.985 0 0);
@@ -72,6 +78,12 @@
   --sidebar-accent-foreground: oklch(0.985 0 0);
   --sidebar-border: oklch(0.269 0 0);
   --sidebar-ring: oklch(0.439 0 0);
+  /* Dark theme overrides for UI components */
+  --ui-card-border: #6f5bd6;
+  --ui-card-bg: #2b2938;
+  --ui-table-header-border: #5b4aa8;
+  --ui-table-row-bg: #26242f;
+  --ui-table-row-border: #3d3a4a;
 }
 
 @theme inline {
@@ -122,4 +134,28 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* Hide native password reveal/clear buttons so only our custom eye toggle is shown */
+input[type="password"]::-ms-reveal,
+input[type="password"]::-ms-clear {
+  display: none !important;
+}
+
+/* Chrome/Edge/Safari - hide the native reveal button */
+input[type="password"]::-webkit-textfield-decoration-container,
+input[type="password"]::-webkit-inner-spin-button,
+input[type="password"]::-webkit-credentials-auto-fill-button,
+input[type="password"]::-webkit-clear-button {
+  display: none !important;
+}
+
+/* Firefox - hide the built-in reveal password button */
+input[type="password"]::-moz-password-reveal {
+  display: none !important;
+}
+
+/* Utility to ensure the custom toggle button doesn't overlap input content */
+.password-toggle-offset {
+  padding-right: 3rem; /* enough space for the absolute-positioned toggle */
 }

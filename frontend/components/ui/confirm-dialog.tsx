@@ -14,6 +14,7 @@ interface ConfirmDialogProps {
   confirmLabel?: string
   cancelLabel?: string
   onConfirm: () => Promise<void> | void
+  error?: string | null
 }
 
 export function ConfirmDialog({
@@ -24,6 +25,7 @@ export function ConfirmDialog({
   confirmLabel = "Confirm",
   cancelLabel = "Cancel",
   onConfirm,
+  error = null,
 }: ConfirmDialogProps) {
   const [loading, setLoading] = React.useState(false)
 
@@ -51,13 +53,22 @@ export function ConfirmDialog({
             )}
           </CardHeader>
           <CardContent>
-            <div className="flex items-center justify-end gap-3">
-              <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={loading}>
-                {cancelLabel}
-              </Button>
-              <Button variant="destructive" onClick={handleConfirm} disabled={loading}>
-                {confirmLabel}
-              </Button>
+            <div className="space-y-3">
+              {error && (
+                <div>
+                  <div role="alert">
+                    <div className="text-sm text-destructive font-medium">{error}</div>
+                  </div>
+                </div>
+              )}
+              <div className="flex items-center justify-end gap-3">
+                <Button variant="ghost" onClick={() => onOpenChange(false)} disabled={loading}>
+                  {cancelLabel}
+                </Button>
+                <Button variant="destructive" onClick={handleConfirm} disabled={loading}>
+                  {confirmLabel}
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>

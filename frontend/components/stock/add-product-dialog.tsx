@@ -5,6 +5,7 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { Button } from "@/components/ui/button"
 import { apiFetch } from '@/lib/api'
+import { normalizeProduct } from '@/lib/response-mappers'
 import {
   Dialog,
   DialogContent,
@@ -24,9 +25,10 @@ interface AddProductDialogProps {
   onAdd: (product: Omit<Product, "id" | "lastUpdated">) => void
   suppliers?: string[]
   categories?: string[]
+  onRefresh?: () => void
 }
 
-export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSuppliers, categories: propCategories }: AddProductDialogProps) {
+export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSuppliers, categories: propCategories, onRefresh }: AddProductDialogProps) {
   const [formData, setFormData] = useState({
     name: "",
     sku: "",
@@ -40,9 +42,10 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
   // store full objects so we can map to ids
   const [categories, setCategories] = useState<{ id: number; name: string }[]>([])
   const [suppliers, setSuppliers] = useState<{ id: number; name: string }[]>([])
+  const [isUploadingProducts, setIsUploadingProducts] = useState(false)
 
   useEffect(() => {
-    let mounted = true
+    let active = true
 
     // If parent passed categories, prefer them
     if (propCategories && propCategories.length) {
@@ -53,7 +56,7 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
           const res = await apiFetch('/categories/')
           if (!res.ok) throw new Error(`Failed to fetch categories: ${res.status}`)
           const data = await res.json()
-          if (!mounted) return
+          if (!active) return
           // Expecting array of objects with id & name OR plain strings
           const list = Array.isArray(data)
             ? data.map((c: any) =>
@@ -62,10 +65,10 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
                   : { id: c.id ?? 0, name: c.name ?? String(c) },
               )
             : []
-          setCategories(list)
+          if (active) setCategories(list)
         } catch (err) {
           console.error("Error fetching categories", err)
-          if (mounted) setCategories([])
+          if (active) setCategories([])
         }
       })()
     }
@@ -78,20 +81,20 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
           const res = await apiFetch('/suppliers/')
           if (!res.ok) throw new Error(`Failed to fetch suppliers: ${res.status}`)
           const data = await res.json()
-          if (!mounted) return
+          if (!active) return
           const list = Array.isArray(data)
             ? data.map((s: any) => (typeof s === "string" ? { id: 0, name: s } : { id: s.id ?? 0, name: s.name ?? String(s) }))
             : []
-          setSuppliers(list)
+          if (active) setSuppliers(list)
         } catch (err) {
           console.error("Error fetching suppliers", err)
-          if (mounted) setSuppliers([])
+          if (active) setSuppliers([])
         }
       })()
     }
 
     return () => {
-      mounted = false
+      active = false
     }
   }, [propCategories, propSuppliers])
 
@@ -187,27 +190,17 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
       }
 
       const created = await res.json()
-      // find supplier & category names for local UI shape
-      // Determine supplier & category names for local UI shape.
-      // Prefer the backend's returned nested object or value, then our resolved id lookups,
-      // and finally fall back to the user's original form input (so UI shows what the user selected).
-      const supplierName =
-        (created.supplier && (created.supplier.name ?? String(created.supplier))) ||
-        (supplier_id ? suppliers.find((s) => s.id === supplier_id)?.name ?? "" : formData.supplierId || "")
-      const categoryName =
-        (created.category && (created.category.name ?? String(created.category))) ||
-        (category_id ? categories.find((c) => c.id === category_id)?.name ?? "" : formData.category || "")
-
-      // call parent onAdd with the product data in the shape it expects
+      // Normalize backend product shape into the UI Product shape and pass to parent
+      const normalized = normalizeProduct(created)
       onAdd({
-        name: created.name ?? payload.name,
-        sku: created.sku ?? payload.sku ?? "",
-        category: categoryName || "",
-        description: created.description ?? payload.description ?? "",
-        quantity: created.quantity ?? payload.quantity,
-        price: created.price ?? payload.price,
-        lowStockThreshold: created.low_stock_threshold ?? payload.low_stock_threshold,
-        supplier: supplierName || "",
+        name: normalized.name,
+        sku: normalized.sku,
+        category: normalized.category,
+        description: normalized.description,
+        quantity: normalized.quantity,
+        price: normalized.price,
+        lowStockThreshold: normalized.lowStockThreshold,
+        supplier: normalized.supplier,
       })
 
       // Reset form
@@ -237,7 +230,7 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-[425px]">
+      <DialogContent className="sm:max-w-[425px]" style={{ backgroundColor: 'var(--ui-card-bg)' }}>
         <DialogHeader>
           <DialogTitle>Add New Product</DialogTitle>
           <DialogDescription>
@@ -369,6 +362,9 @@ export function AddProductDialog({ open, onOpenChange, onAdd, suppliers: propSup
               </Select>
             </div>
             {/* supplier/category creation moved to dashboard */}
+          </div>
+          <div className="pt-2 mb-6">
+            {/* Upload handled from the Inventory header; keep this area for contextual info or future UI */}
           </div>
           <DialogFooter>
             <Button type="submit">Add Product</Button>

@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
@@ -10,25 +10,98 @@ import { InventoryOverview } from "./inventory-overview"
 import { SalesAnalytics } from "./sales-analytics"
 import { CategoryPerformance } from "./category-performance"
 import { SupplierAnalytics } from "./supplier-analytics"
-import { StockAlerts } from "./stock-alerts"
+import { getRestockSummary, RestockSummary, getSales, getProducts, filterByTimeRange } from "@/lib/api"
+import { getStockCounts } from '@/lib/stock-utils'
 
 export function AnalyticsDashboard() {
   const [timeRange, setTimeRange] = useState("30d")
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
+  const [restockSummary, setRestockSummary] = useState<RestockSummary | null>(null)
+  const [totalRevenue, setTotalRevenue] = useState<number | null>(null)
+  const [totalOrders, setTotalOrders] = useState<number | null>(null)
+  const [averageOrderValue, setAverageOrderValue] = useState<number | null>(null)
+  const [inventoryValue, setInventoryValue] = useState<number | null>(null)
+  const [computedLowStock, setComputedLowStock] = useState<number | null>(null)
+  const [computedOutOfStock, setComputedOutOfStock] = useState<number | null>(null)
 
-  // Mock KPI data
+  useEffect(() => {
+    let mounted = true
+    setLoading(true)
+    setError(null)
+
+    async function load() {
+      try {
+        const [summary, salesRaw, products] = await Promise.all([getRestockSummary(), getSales(), getProducts()])
+
+        if (!mounted) return
+
+  setRestockSummary(summary)
+
+        // Filter sales according to selected time range (sale_date field)
+        const sales = filterByTimeRange(salesRaw || [], timeRange, 'sale_date')
+
+        // Compute sales KPIs (sale_price assumed to be in dollars; if cents, divide by 100)
+        const totalRev = sales.reduce((sum: number, s: any) => sum + ((s.sale_price ?? 0) * (s.quantity ?? 0)), 0)
+
+        // totalUnitsSold = sum of quantities
+        const totalUnitsSold = sales.reduce((sum: number, s: any) => sum + (s.quantity ?? 0), 0)
+
+        // totalOrders: best-effort count of distinct order identifiers if present, otherwise number of sale records
+        const orderIdSet = new Set(sales.map((s: any) => s.order_id).filter((id: any) => id !== undefined && id !== null))
+        const totalOrdersCount = orderIdSet.size > 0 ? orderIdSet.size : sales.length
+
+        const aov = totalOrdersCount > 0 ? totalRev / totalOrdersCount : 0
+
+        setTotalRevenue(Math.round(totalRev))
+        setTotalOrders(totalUnitsSold)
+        setAverageOrderValue(Math.round(aov * 100) / 100)
+
+  // Inventory value: use same calculation as stock-management (price * quantity)
+  // Note: normalizeProduct sets `price` directly from API; keep calculation consistent across components
+  const invValue = products.reduce((sum: number, p: any) => sum + (p.price) * p.quantity, 0)
+        setInventoryValue(Math.round(invValue))
+
+        // Use centralized stock-utils to compute low/out of stock counts from fetched products
+        try {
+          const counts = getStockCounts(products || [])
+          setComputedLowStock(counts.lowStock)
+          setComputedOutOfStock(counts.outOfStock)
+          // update restockSummary-like counts locally if API summary missing
+          if (!summary) {
+            setRestockSummary({ low_stock_items: counts.lowStock, out_of_stock_items: counts.outOfStock } as RestockSummary)
+          }
+        } catch (err) {
+          // non-fatal: leave restockSummary as provided by API
+          console.warn('Failed to compute stock counts from products:', err)
+        }
+      } catch (err: any) {
+        setError(err?.message || 'Failed to load analytics')
+      } finally {
+        setLoading(false)
+      }
+    }
+
+    load()
+
+    return () => {
+      mounted = false
+    }
+  }, [])
+
   const kpis = {
-    totalRevenue: 245680,
-    revenueChange: 12.5,
-    totalOrders: 1247,
-    ordersChange: -3.2,
-    averageOrderValue: 197.2,
-    aovChange: 8.7,
-    inventoryValue: 892340,
-    inventoryChange: 5.4,
-    lowStockItems: 23,
-    outOfStockItems: 7,
-    topSellingCategory: "Electronics",
-    worstPerformingCategory: "Books",
+    totalRevenue: loading ? '—' : totalRevenue ?? '—',
+    revenueChange: 0,
+    totalOrders: loading ? '—' : totalOrders ?? '—',
+    ordersChange: 0,
+    averageOrderValue: loading ? '—' : averageOrderValue ?? '—',
+    aovChange: 0,
+    inventoryValue: loading ? '—' : inventoryValue ?? '—',
+    inventoryChange: 0,
+    lowStockItems: computedLowStock !== null ? computedLowStock : (restockSummary ? restockSummary.low_stock_items : '—'),
+    outOfStockItems: computedOutOfStock !== null ? computedOutOfStock : (restockSummary ? restockSummary.out_of_stock_items : '—'),
+    topSellingCategory: '—',
+    worstPerformingCategory: '—',
   }
 
   return (
@@ -122,7 +195,7 @@ export function AnalyticsDashboard() {
             <AlertTriangle className="h-4 w-4 text-yellow-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-yellow-600">{kpis.lowStockItems}</div>
+            <div className="text-2xl font-bold text-yellow-600">{computedLowStock !== null ? computedLowStock : (restockSummary ? restockSummary.low_stock_items : '—')}</div>
             <p className="text-xs text-muted-foreground">Items below threshold</p>
           </CardContent>
         </Card>
@@ -133,7 +206,7 @@ export function AnalyticsDashboard() {
             <AlertTriangle className="h-4 w-4 text-red-500" />
           </CardHeader>
           <CardContent>
-            <div className="text-2xl font-bold text-red-600">{kpis.outOfStockItems}</div>
+            <div className="text-2xl font-bold text-red-600">{computedOutOfStock !== null ? computedOutOfStock : (restockSummary ? restockSummary.out_of_stock_items : '—')}</div>
             <p className="text-xs text-muted-foreground">Items with zero inventory</p>
           </CardContent>
         </Card>
@@ -152,12 +225,11 @@ export function AnalyticsDashboard() {
 
       {/* Analytics Tabs */}
       <Tabs defaultValue="overview" className="space-y-4">
-        <TabsList className="grid w-full grid-cols-5">
+        <TabsList className="grid w-full grid-cols-4">
           <TabsTrigger value="overview">Overview</TabsTrigger>
           <TabsTrigger value="sales">Sales</TabsTrigger>
           <TabsTrigger value="categories">Categories</TabsTrigger>
           <TabsTrigger value="suppliers">Suppliers</TabsTrigger>
-          <TabsTrigger value="alerts">Alerts</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
@@ -174,10 +246,6 @@ export function AnalyticsDashboard() {
 
         <TabsContent value="suppliers" className="space-y-4">
           <SupplierAnalytics timeRange={timeRange} />
-        </TabsContent>
-
-        <TabsContent value="alerts" className="space-y-4">
-          <StockAlerts />
         </TabsContent>
       </Tabs>
     </div>

@@ -45,7 +45,7 @@ export default function ProductsManager() {
           <p className="text-muted-foreground">Manage your inventory and track stock levels</p>
         </div>
 
-        <div className="flex gap-2">
+        <div className="flex gap-2 items-center">
           <Button variant="outline" size="sm">
             <Plus className="mr-2" /> Add Product
           </Button>

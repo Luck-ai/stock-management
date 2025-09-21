@@ -1,40 +1,65 @@
-FastAPI backend for Stock Management
+## Stock Management App
 
-This backend provides a simple FastAPI app with a PostgreSQL database using SQLAlchemy.
+This repository contains a simple stock management application with a FastAPI backend and a React frontend.
 
-Quick start (local, Python):
+The backend is configured via environment variables. See `./.env.example` for the required keys.
 
-1. Create a virtualenv and activate it.
-2. Install requirements:
+Required environment variables
+- `DATABASE_URL` (required): asyncpg URL for Postgres. Example: `postgresql+asyncpg://user:pass@host:5432/dbname`
+- `JWT_SECRET` (required): secret used to sign JWT tokens
+- `ACCESS_TOKEN_EXPIRE_MINUTES` (optional): token expiry in minutes (default: `60`)
+- `SENDGRID_API_KEY` (optional): SendGrid key to enable outgoing email
 
-   python -m pip install -r requirements.txt
+To set up the environment variables, create a `.env` file in the `backend` folder based on the `.env.example` template and add the required keys.
 
-3. Set DATABASE_URL environment variable (see `.env.example`). By default the app tries:
+Security
+- Never commit real secrets. Use `backend/.env.example` as a template and keep `backend/.env` local and out of source control.
 
-   postgresql://postgres:postgres@localhost:5432/stockdb
-
-4. Start the app:
-
-   uvicorn app.main:app --reload --port 8000
-
-API docs will be available at http://localhost:8000/docs
-
-Quick start (Docker Compose):
+Running with Docker Compose (recommended for development)
 
 1. From the repository root run:
 
-   docker-compose -f backend/docker-compose.yml up --build
+   docker-compose up --build
 
-This will start a Postgres container and the backend. The backend will use the DATABASE_URL set in the compose file.
+   This starts three services: `db` (Postgres), `backend`, and `frontend`. The `backend` service is configured to use the compose `DATABASE_URL`.
 
-Files of interest:
-- `app/main.py` - FastAPI app and router mounting
-- `app/models.py` - SQLAlchemy models
-- `app/schemas.py` - Pydantic schemas
-- `app/crud.py` - DB helper functions
-- `app/database.py` - SQLAlchemy engine & session
+2. Backend is available at:
 
-Next steps you might want:
-- Add authentication (JWT)
-- Add other models (suppliers, orders, users)
-- Add Alembic migrations
+   http://localhost:8000
+
+3. Frontend is available at:
+
+   http://localhost:3000
+
+
+Running using the Windows PowerShell launcher (`launch.ps1`)
+
+`launch.ps1` is a convenience script that:
+- starts the Postgres DB container (docker compose up -d db)
+- opens new PowerShell windows for the backend (uvicorn) and frontend (npm run dev)
+
+From the repository root, run in PowerShell:
+
+```powershell
+.\launch.ps1
+```
+
+Notes about `launch.ps1`:
+- The script sets `DATABASE_URL` for the backend to point at the local Postgres container it starts.
+- If a `.venv` exists in the backend folder or repo root, `launch.ps1` will try to activate it before running the server.
+
+A virtual environment is required for the launch script to work. If you don't have one, create it in the repo root:
+
+
+1. Create and activate a virtualenv:
+
+Use python version 3.9 or 3.10 for best compatibility.
+
+2. Install dependencies:
+
+```powershell
+python -m pip install -r backend/requirements.txt
+```
+
+
+
