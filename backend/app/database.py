@@ -6,9 +6,9 @@ from typing import AsyncGenerator
 
 load_dotenv()
 
-DATABASE_URL = os.getenv(
-    'DATABASE_URL', 'postgresql+asyncpg://postgres:postgres@localhost:5432/stockdb'
-)
+DATABASE_URL = os.getenv('DATABASE_URL')
+if not DATABASE_URL:
+    raise RuntimeError('DATABASE_URL environment variable is not set. Please set DATABASE_URL in your .env or environment.')
 
 engine = create_async_engine(DATABASE_URL, echo=False, future=True)
 async_session = async_sessionmaker(bind=engine, expire_on_commit=False, class_=AsyncSession)

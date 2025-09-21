@@ -64,10 +64,6 @@ export function RestockManagement() {
             </p>
           </div>
           <div className="flex items-center space-x-2">
-            <Button variant="outline">
-              <Download className="h-4 w-4 mr-2" />
-              Export Orders
-            </Button>
             <Button variant="outline" onClick={refreshData}>
               <RefreshCw className="h-4 w-4 mr-2" />
               Refresh

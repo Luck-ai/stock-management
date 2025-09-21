@@ -8,3 +8,5 @@ alembic
 python-dotenv
 python-jose[cryptography]
 python-multipart
+python-http-client
+sendgrid

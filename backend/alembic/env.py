@@ -27,7 +27,10 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 # Set the database URL from environment
-database_url = os.getenv('DATABASE_URL', 'postgresql+asyncpg://postgres:postgres@localhost:5432/stockdb')
+# Require DATABASE_URL from environment for migrations
+database_url = os.getenv('DATABASE_URL')
+if not database_url:
+    raise RuntimeError('DATABASE_URL environment variable is not set. Please set DATABASE_URL before running Alembic migrations.')
 # Convert async URL to sync for Alembic
 sync_database_url = database_url.replace('postgresql+asyncpg://', 'postgresql://')
 config.set_main_option('sqlalchemy.url', sync_database_url)

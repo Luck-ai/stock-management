@@ -1,35 +1,65 @@
-# Stock Management (Monorepo)
+## Stock Management App
 
-This repository contains a Next.js frontend and a FastAPI backend (in `backend/`).
+This repository contains a simple stock management application with a FastAPI backend and a React frontend.
 
-To run the backend locally see `backend/README.md`.
-# Stock management app
+The backend is configured via environment variables. See `./.env.example` for the required keys.
 
-*Automatically synced with your [v0.app](https://v0.app) deployments*
+Required environment variables
+- `DATABASE_URL` (required): asyncpg URL for Postgres. Example: `postgresql+asyncpg://user:pass@host:5432/dbname`
+- `JWT_SECRET` (required): secret used to sign JWT tokens
+- `ACCESS_TOKEN_EXPIRE_MINUTES` (optional): token expiry in minutes (default: `60`)
+- `SENDGRID_API_KEY` (optional): SendGrid key to enable outgoing email
 
-[![Deployed on Vercel](https://img.shields.io/badge/Deployed%20on-Vercel-black?style=for-the-badge&logo=vercel)](https://vercel.com/lucky-agarwals-projects-8ad5c1ac/v0-stock-management-app)
-[![Built with v0](https://img.shields.io/badge/Built%20with-v0.app-black?style=for-the-badge)](https://v0.app/chat/projects/ieZBamgZ60u)
+To set up the environment variables, create a `.env` file in the `backend` folder based on the `.env.example` template and add the required keys.
 
-## Overview
+Security
+- Never commit real secrets. Use `backend/.env.example` as a template and keep `backend/.env` local and out of source control.
 
-This repository will stay in sync with your deployed chats on [v0.app](https://v0.app).
-Any changes you make to your deployed app will be automatically pushed to this repository from [v0.app](https://v0.app).
+Running with Docker Compose (recommended for development)
 
-## Deployment
+1. From the repository root run:
 
-Your project is live at:
+   docker-compose up --build
 
-**[https://vercel.com/lucky-agarwals-projects-8ad5c1ac/v0-stock-management-app](https://vercel.com/lucky-agarwals-projects-8ad5c1ac/v0-stock-management-app)**
+   This starts three services: `db` (Postgres), `backend`, and `frontend`. The `backend` service is configured to use the compose `DATABASE_URL`.
 
-## Build your app
+2. Backend is available at:
 
-Continue building your app on:
+   http://localhost:8000
 
-**[https://v0.app/chat/projects/ieZBamgZ60u](https://v0.app/chat/projects/ieZBamgZ60u)**
+3. Frontend is available at:
 
-## How It Works
+   http://localhost:3000
 
-1. Create and modify your project using [v0.app](https://v0.app)
-2. Deploy your chats from the v0 interface
-3. Changes are automatically pushed to this repository
-4. Vercel deploys the latest version from this repository
+
+Running using the Windows PowerShell launcher (`launch.ps1`)
+
+`launch.ps1` is a convenience script that:
+- starts the Postgres DB container (docker compose up -d db)
+- opens new PowerShell windows for the backend (uvicorn) and frontend (npm run dev)
+
+From the repository root, run in PowerShell:
+
+```powershell
+.\launch.ps1
+```
+
+Notes about `launch.ps1`:
+- The script sets `DATABASE_URL` for the backend to point at the local Postgres container it starts.
+- If a `.venv` exists in the backend folder or repo root, `launch.ps1` will try to activate it before running the server.
+
+A virtual environment is required for the launch script to work. If you don't have one, create it in the repo root:
+
+
+1. Create and activate a virtualenv:
+
+Use python version 3.9 or 3.10 for best compatibility.
+
+2. Install dependencies:
+
+```powershell
+python -m pip install -r backend/requirements.txt
+```
+
+
+

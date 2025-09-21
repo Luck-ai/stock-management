@@ -11,7 +11,9 @@ from . import models
 from .database import get_db
 
 # Settings
-SECRET_KEY = os.getenv('JWT_SECRET', '549f7e774ff66e00e39617ab35bdbddc')
+SECRET_KEY = os.getenv('JWT_SECRET')
+if not SECRET_KEY:
+    raise RuntimeError('JWT_SECRET environment variable is not set. Please set JWT_SECRET in your .env or environment.')
 ALGORITHM = 'HS256'
 ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv('ACCESS_TOKEN_EXPIRE_MINUTES', '60'))
 
