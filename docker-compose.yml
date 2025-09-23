@@ -31,11 +31,7 @@ services:
       - 3000:3000
     depends_on:
       - backend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-    command: npm run dev
-    working_dir: /app
+
 
 volumes:
   db-data:
